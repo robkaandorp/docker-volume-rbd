@@ -1,0 +1,33 @@
+{
+  "name": "docker-volume-rbd",
+  "version": "1.0.0",
+  "description": "Docker volume plugin for ceph rbd",
+  "main": "dist/server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robkaandorp/docker-volume-rbd.git"
+  },
+  "keywords": [
+    "docker",
+    "volume",
+    "plugin",
+    "ceph",
+    "rbd"
+  ],
+  "author": "Rob Kaandorp",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/robkaandorp/docker-volume-rbd/issues"
+  },
+  "homepage": "https://github.com/robkaandorp/docker-volume-rbd#readme",
+  "devDependencies": {
+    "@types/express": "^4.17.3",
+    "typescript": "^3.8.3"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
