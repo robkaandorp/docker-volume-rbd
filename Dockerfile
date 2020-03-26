@@ -1,9 +1,11 @@
-FROM ceph/ceph:v15.2
+FROM ceph/ceph:v15.2 AS ceph_with_npm
+RUN curl -sL https://rpm.nodesource.com/setup_12.x | bash -
+RUN yum install -y nodejs
+
+FROM ceph_with_npm
 LABEL maintainer="Rob Kaandorp <rob@di.nl>"
 COPY . /app
 WORKDIR /app
-RUN curl -sL https://rpm.nodesource.com/setup_12.x | bash -
-RUN yum install -y nodejs
 RUN npm install
 RUN npx tsc
 RUN npm prune --production
