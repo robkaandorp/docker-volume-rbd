@@ -53,6 +53,7 @@ function getImageName(volumeName: string): string {
 app.post("/VolumeDriver.Create", async (request, response) => {
     const req = request.body as { Name: string, Opts: { size: string, fstype: string } };
     const imageName = getImageName(req.Name);
+    const fstype = req.Opts.fstype || "xfs";
 
     console.log(`Creating rbd volume ${imageName}`);
 
@@ -78,13 +79,13 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`mkfs.${req.Opts.fstype} ${device}`, { timeout: 120000 });
+        const { stdout, stderr } = await exec(`mkfs.${fstype} ${device}`, { timeout: 120000 });
         console.error(stderr);
         console.log(stdout);
     }
     catch (error) {
         console.error(error);
-        return response.json({ Err: `mkfs.${req.Opts.fstype} ${device} command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: `mkfs.${fstype} ${device} command failed with code ${error.code}: ${error.message}` });
     }
 
     try {
