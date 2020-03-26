@@ -306,7 +306,7 @@ app.post("/VolumeDriver.List", (request, response) => {
     console.log("Getting list of registered rbd volumes");
 
     response.json({
-        Volumes: mountPointTable.keys.apply((mountPoint: string) => {
+        Volumes: [ ...mountPointTable.keys() ].map((mountPoint: string) => {
             return {
                 Name: mountPointTable.get(mountPoint).name,
                 Mountpoint: mountPoint
@@ -328,7 +328,7 @@ app.post("/VolumeDriver.Capabilities", (request, response) => {
 
 
 // TODO listen on unix socket
-app.listen(socketAddress, err => {
+app.listen(3000, err => {
     if (err) {
         return console.error(err);
     }
