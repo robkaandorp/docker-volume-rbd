@@ -1,4 +1,5 @@
 import express from "express";
+import bodyParser from "body-parser";
 import util from 'util';
 const exec = util.promisify(require('child_process').exec);
 import process from "process";
@@ -8,7 +9,9 @@ const socketAddress = "/run/docker/plugins/rbd.sock";
 const pool = process.env.RBD_CONF_POOL || "rbd";
 const cluster = process.env.RBD_CONF_CLUSTER || "ceph";
 const user = process.env.RBD_CONF_KEYRING_USER || "admin";
+
 const app = express();
+app.use(bodyParser.json());
 
 // Documentation about docker volume plugins can be found here: https://docs.docker.com/engine/extend/plugins_volume/
 
@@ -283,8 +286,6 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     Get info about volume_name.
 */
 app.post("/VolumeDriver.Get", (request, response) => {
-    console.log(request.body);
-    
     const req = request.body as { Name: string };
     const imageName = getImageName(req.Name);
     const mountPoint = `/mnt/volumes/${imageName}`;
