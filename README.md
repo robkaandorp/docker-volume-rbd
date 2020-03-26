@@ -16,4 +16,12 @@ Build with:
 
 % docker plugin create robkaandorp/rbd:v15.2 .
 % rm -rf rootfs
+
+% docker plugin enable robkaandorp/rbd:v15.2
+```
+
+Example of how to create a volume:
+
+```
+% docker volume create -d robkaandorp/rbd:v15.2 -o size=150M -o fstype=xfs test2
 ```
