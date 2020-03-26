@@ -11,7 +11,7 @@ const cluster = process.env.RBD_CONF_CLUSTER || "ceph";
 const user = process.env.RBD_CONF_KEYRING_USER || "admin";
 
 const app = express();
-app.use(bodyParser.json({ type: "application/*" }));
+app.use(bodyParser.json({ strict: false, type: req => true }));
 
 // Documentation about docker volume plugins can be found here: https://docs.docker.com/engine/extend/plugins_volume/
 
@@ -333,20 +333,10 @@ app.post("/VolumeDriver.Capabilities", (request, response) => {
 });
 
 
-if (fs.existsSync(socketAddress)) {
-    app.listen(socketAddress, err => {
-        if (err) {
-            return console.error(err);
-        }
+app.listen(socketAddress, err => {
+    if (err) {
+        return console.error(err);
+    }
 
-        console.log(`Plugin rbd listening on socket ${socketAddress}`);
-    });
-} else {
-    app.listen(3000, err => {
-        if (err) {
-            return console.error(err);
-        }
-
-        console.log(`Plugin rbd listening on port 3000`);
-    });
-}
+    console.log(`Plugin rbd listening on socket ${socketAddress}`);
+});
