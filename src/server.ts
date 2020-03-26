@@ -1,5 +1,13 @@
 import express from "express";
+import util from 'util';
+const exec = util.promisify(require('child_process').exec);
+import process from "process";
+import fs from "fs";
 
+const socketAddress = "/run/docker/plugins/rbd.sock";
+const pool = process.env.RBD_CONF_POOL || "rbd";
+const cluster = process.env.RBD_CONF_CLUSTER || "ceph";
+const user = process.env.RBD_CONF_KEYRING_USER || "admin";
 const app = express();
 
 // Documentation about docker volume plugins can be found here: https://docs.docker.com/engine/extend/plugins_volume/
@@ -12,104 +20,298 @@ app.post("/Plugin.Activate", (request, response) => {
     });
 });
 
+class MountPointEntry {
+    constructor(
+        readonly name: string,
+        readonly imageName: string,
+        readonly mountPoint: string,
+        referenceId: string) {
+        this.references = [referenceId];
+    }
 
-app.post("/VolumeDriver.Create", (request, response) => {
-    console.log("Create rbd volume");
+    references: string[];
 
+    hasReference(id: string): boolean {
+        return !!this.references.find(refid => refid === id);
+    }
+}
+
+let mountPointTable = new Map<string, MountPointEntry>();
+
+function getImageName(volumeName: string): string {
+    return `${pool}/${volumeName}`;
+}
+
+/*
+    Instruct the plugin that the user wants to create a volume, given a user specified volume name. 
+    The plugin does not need to actually manifest the volume on the filesystem yet (until Mount is 
+    called). Opts is a map of driver specific options passed through from the user request.
+*/
+app.post("/VolumeDriver.Create", async (request, response) => {
     const req = request.body as { Name: string, Opts: { size: string, fstype: string } };
+    const imageName = getImageName(req.Name);
 
-    // rbd create $Name --size $size
-    // device = rbd map @Name
-    // mkfs.$fstype $device
-    // rbd unmap @Name
+    console.log(`Creating rbd volume ${imageName}`);
+
+    try {
+        const { stdout, stderr } = await exec(`rbd create ${imageName} --size ${req.Opts.size}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd create command failed with code ${error.code}: ${error.message}` });
+    }
+
+    let device = "";
+    try {
+        const { stdout, stderr } = await exec(`rbd map ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        device = (stdout as string).trim();
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd map command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        const { stdout, stderr } = await exec(`mkfs.${req.Opts.fstype} ${device}`, { timeout: 120000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `mkfs.${req.Opts.fstype} ${device} command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        device = (stdout as string).trim();
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+    }
 
     response.json({
         Err: ""
     });
 });
 
-app.post("/VolumeDriver.Remove", (request, response) => {
-    console.log("Removing rbd volume");
-
+/*
+    Delete the specified volume from disk. This request is issued when a user invokes 
+    docker rm -v to remove volumes associated with a container.
+*/
+app.post("/VolumeDriver.Remove", async (request, response) => {
     const req = request.body as { Name: string };
+    const imageName = getImageName(req.Name);
 
-    // unmount
-    // rbd unmap $Name
-    // rbd trash $Name
+    console.log(`Removing rbd volume ${imageName}`);
+
+    try {
+        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        const { stdout, stderr } = await exec(`rbd remove --no-progress ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd remove command failed with code ${error.code}: ${error.message}` });
+    }
 
     response.json({
         Err: ""
     });
 });
 
-app.post("/VolumeDriver.Mount", (request, response) => {
-    console.log("Mounting rbd volume");
-
+/*
+    Docker requires the plugin to provide a volume, given a user specified volume name. 
+    Mount is called once per container start. If the same volume_name is requested more 
+    than once, the plugin may need to keep track of each new mount request and provision 
+    at the first mount request and deprovision at the last corresponding unmount request.
+*/
+app.post("/VolumeDriver.Mount", async (request, response) => {
     const req = request.body as { Name: string, ID: string };
+    const imageName = getImageName(req.Name);
+    const mountPoint = `/mnt/volumes/${imageName}`;
 
-    // device = rbd map $Name
-    // mount $device /mnt/volumes/$Name
+    console.log(`Mounting rbd volume ${imageName}`);
 
+    let device = "";
+    try {
+        const { stdout, stderr } = await exec(`rbd map ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        device = (stdout as string).trim();
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd map command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        fs.mkdirSync(mountPoint, { recursive: true });
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `mkdir command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        const { stdout, stderr } = await exec(`mount ${device} ${mountPoint}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `mount command failed with code ${error.code}: ${error.message}` });
+    }
+
+    if (mountPointTable.has(mountPoint)) {
+        mountPointTable.get(mountPoint).references.push(req.ID);
+    } else {
+        mountPointTable.set(mountPoint, 
+            new MountPointEntry( 
+                req.Name, 
+                imageName, 
+                mountPoint,
+                req.ID));
+    }
+    
     response.json({
-        MountPoint: `/mnt/volumes/${req.Name}`,
+        MountPoint: mountPoint,
         Err: ""
     });
 });
 
+/*
+    Request the path to the volume with the given volume_name.
+*/
 app.post("/VolumeDriver.Path", (request, response) => {
-    console.log("Request of path of rbd mount");
-
     const req = request.body as { Name: string };
+    const imageName = getImageName(req.Name);
+    const mountPoint = `/mnt/volumes/${imageName}`;
 
-    // device = rbd map $Name
-    // mount $device /mnt/volumes/$Name
+    console.log(`Request path of rbd mount ${imageName}`);
 
     response.json({
-        MountPoint: `/mnt/volumes/${req.Name}`,
+        MountPoint: mountPoint,
         Err: ""
     });
 });
 
-app.post("/VolumeDriver.Unmount", (request, response) => {
-    console.log("Unmounting rbd volume");
+/*
+    Docker is no longer using the named volume. Unmount is called once per container stop. 
+    Plugin may deduce that it is safe to deprovision the volume at this point.
 
+    ID is a unique ID for the caller that is requesting the mount.
+*/
+app.post("/VolumeDriver.Unmount", async (request, response) => {
     const req = request.body as { Name: string, ID: string };
+    const imageName = getImageName(req.Name);
+    const mountPoint = `/mnt/volumes/${imageName}`;
 
-    // umount /mnt/volumes/$Name
-    // rbd unmap $Name
+    console.log(`Unmounting rbd volume ${imageName}`);
+
+    if (!mountPointTable.has(mountPoint)) {
+        const error = `Unknown volume ${imageName}`;
+        console.error(error);
+        return response.json({ Err: error });
+    }
+
+    let mountPointEntry = mountPointTable.get(mountPoint);
+
+    if (!mountPointEntry.hasReference(req.ID)) {
+        const error = `Unknown caller id ${req.ID} for volume ${imageName}`;
+        console.error(error);
+        return response.json({ Err: error });
+    }
+
+    const remainingIds = mountPointEntry.references.filter(id => id !== req.ID);
+
+    if (remainingIds.length > 0) {
+        console.log(`${remainingIds.length} references to volume ${imageName} remaining, not unmounting..`);
+        mountPointEntry.references = remainingIds;
+        return response.json({ Err: "" });
+    } 
+
+    try {
+        const { stdout, stderr } = await exec(`umount ${mountPoint}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `umount command failed with code ${error.code}: ${error.message}` });
+    }
+
+    mountPointTable.delete(mountPoint);
+
+    try {
+        fs.rmdirSync(mountPoint);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rmdir command failed with code ${error.code}: ${error.message}` });
+    }
+
+    try {
+        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        console.error(stderr);
+        console.log(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+    }
 
     response.json({
         Err: ""
     });
 });
 
+/*
+    Get info about volume_name.
+*/
 app.post("/VolumeDriver.Get", (request, response) => {
-    console.log("Getting info about rbd volume");
-
     const req = request.body as { Name: string };
+    const imageName = getImageName(req.Name);
+    const mountPoint = `/mnt/volumes/${imageName}`;
+
+    console.log(`Getting info about rbd volume ${imageName}`);
 
     response.json({
         Volume: {
           Name: req.Name,
-          Mountpoint: `/mnt/volumes/${req.Name}`,
+          Mountpoint: mountPoint,
           Status: {}
         },
         Err: ""
       });
 });
 
+/*
+    Get the list of volumes registered with the plugin.
+*/
 app.post("/VolumeDriver.List", (request, response) => {
     console.log("Getting list of registered rbd volumes");
 
-    // rbd list
-
     response.json({
-        Volumes: [
-          {
-            Name: "",
-            Mountpoint: `/mnt/volumes/`
-          }
-        ],
+        Volumes: mountPointTable.keys.apply((mountPoint: string) => {
+            return {
+                Name: mountPointTable.get(mountPoint).name,
+                Mountpoint: mountPoint
+            };
+        }),
         Err: ""
       });
 });
@@ -126,10 +328,10 @@ app.post("/VolumeDriver.Capabilities", (request, response) => {
 
 
 // TODO listen on unix socket
-app.listen(3000, err => {
+app.listen(socketAddress, err => {
     if (err) {
         return console.error(err);
     }
 
-    console.log("Server listening on port 3000");
+    console.log(`Plugin rbd listening on socket ${socketAddress}`);
 });

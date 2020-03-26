@@ -1,0 +1,67 @@
+{
+	"description": "Ceph rbd plugin for Docker",
+	"documentation": "https://github.com/robkaandorp/docker-volume-rbd",
+    "entrypoint": ["node", "/app/dist/server.js"],
+    "env": [
+        {
+            "name": "RBD_CONF_POOL",
+            "settable": ["value"]
+        },
+        {
+            "name": "RBD_CONF_CLUSTER",
+            "settable": ["value"]
+        },
+        {
+            "name": "RBD_CONF_KEYRING_USER",
+            "settable": ["value"]
+        }
+    ],
+    "network": {
+        "type": "none"
+    },
+	"interface" : {
+        "types": ["docker.volumedriver/1.0"],
+        "socket": "rbd.sock"
+	},
+	"linux": {
+        "AllowAllDevices": true,
+        "capabilities": ["CAP_SYS_ADMIN", "CAP_SYS_MODULE"],
+        "devices": null
+    },
+    "mounts": [
+        {
+          "source": "/lib/modules",
+          "destination": "/lib/modules",
+          "type": "bind",
+          "options": [
+            "rbind"
+          ]
+        },
+        {
+          "source": "/dev",
+          "destination": "/dev",
+          "type": "bind",
+          "options": [
+            "shared",
+            "rbind"
+          ]
+        },
+        {
+          "source": "/etc/ceph",
+          "destination": "/etc/ceph",
+          "type": "bind",
+          "options": [
+            "rbind"
+          ]
+        },
+        {
+          "source": "/sys",
+          "destination": "/sys",
+          "type": "bind",
+          "options": [
+            "rbind"
+          ]
+        }
+    ],
+    "propagatedmount": "/mnt/volumes"
+}
