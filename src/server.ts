@@ -327,8 +327,7 @@ app.post("/VolumeDriver.Capabilities", (request, response) => {
 });
 
 
-// TODO listen on unix socket
-app.listen(3000, err => {
+app.listen(socketAddress, err => {
     if (err) {
         return console.error(err);
     }
