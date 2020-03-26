@@ -283,6 +283,8 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     Get info about volume_name.
 */
 app.post("/VolumeDriver.Get", (request, response) => {
+    console.log(request.body);
+    
     const req = request.body as { Name: string };
     const imageName = getImageName(req.Name);
     const mountPoint = `/mnt/volumes/${imageName}`;
