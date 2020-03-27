@@ -105,6 +105,23 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     });
 });
 
+async function isMapped(name: string): Promise<boolean> {
+    let mapped: any[];
+
+    try {
+        const { stdout, stderr } = await execFile("rbd", ["showmapped", "--format", "json"], { timeout: 30000 });
+        if (stderr) console.log(stderr);
+
+        mapped = JSON.parse(stdout);
+    }
+    catch (error) {
+        console.error(error);
+        throw { Err: `rbd showmapped command failed with code ${error.code}: ${error.message}` };
+    }
+
+    return !!mapped.find(i => i.pool === pool && i.name === name);
+}
+
 /*
     Delete the specified volume from disk. This request is issued when a user invokes 
     docker rm -v to remove volumes associated with a container.
@@ -115,14 +132,25 @@ app.post("/VolumeDriver.Remove", async (request, response) => {
 
     console.log(`Removing rbd volume ${imageName}`);
 
+    let mustUnmap = false;
+
     try {
-        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        if (stdout) console.log(stdout);
-    }
+        mustUnmap = await isMapped(req.Name);
+    } 
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+        return response.json(error);
+    }
+
+    if (mustUnmap) {
+        try {
+            const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
+            if (stderr) console.log(stderr);
+            if (stdout) console.log(stdout);
+        }
+        catch (error) {
+            console.error(error);
+            return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+        }
     }
 
     try {
@@ -295,6 +323,25 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     });
 });
 
+async function isRbdImage(name: string): Promise<boolean> {
+    let rbdList: string[] = [];
+
+    try {
+        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
+        if (stderr) console.log(stderr);
+        
+        if (stdout) {
+            rbdList = stdout.split(/\s+/);
+        }
+    }
+    catch (error) {
+        console.error(error);
+        throw { Err: `rbd list command failed with code ${error.code}: ${error.message}` };
+    }
+
+    return !!rbdList.find(i => i === name);
+}
+
 /*
     Get info about volume_name.
 */
@@ -308,23 +355,12 @@ app.post("/VolumeDriver.Get", async (request, response) => {
 
     console.log(`Getting info about rbd volume ${imageName}`);
 
-    let rbdList: string[] = [];
-
     try {
-        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        
-        if (stdout) {
-            rbdList = stdout.split(/\s+/);
+        if (!await isRbdImage(req.Name)) {
+            response.json({ Err: "" });
         }
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd list command failed with code ${error.code}: ${error.message}` });
-    }
-
-    if (!rbdList.find(i => i === req.Name)) {
-        response.json({ Err: "" });
+    } catch (error) {
+        return response.json(error);
     }
 
     response.json({
