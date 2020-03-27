@@ -321,18 +321,14 @@ app.post("/VolumeDriver.Get", async (request, response) => {
         response.json({ Err: "" });
     }
 
-    if (mountPointTable.has(mountPoint)) {
-        response.json({
-            Volume: {
-                Name: req.Name,
-                Mountpoint: entry?.mountPoint || "",
-                Status: {}
-            },
-            Err: ""
-        });
-    } else {
-        response.json({ Err: "" });
-    }
+    response.json({
+        Volume: {
+            Name: req.Name,
+            Mountpoint: entry?.mountPoint || "",
+            Status: {}
+        },
+        Err: ""
+    });
 });
 
 /*
