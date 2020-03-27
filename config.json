@@ -17,7 +17,7 @@
         }
     ],
     "network": {
-        "type": "none"
+        "type": "host"
     },
 	"interface" : {
         "types": ["docker.volumedriver/1.0"],
