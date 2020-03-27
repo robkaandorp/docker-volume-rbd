@@ -207,10 +207,14 @@ app.post("/VolumeDriver.Path", (request, response) => {
 
     console.log(`Request path of rbd mount ${imageName}`);
 
-    response.json({
-        MountPoint: mountPoint,
-        Err: ""
-    });
+    if (mountPointTable.has(mountPoint)) {
+        response.json({
+            MountPoint: mountPoint,
+            Err: ""
+        });
+    } else {
+        response.json({ Err: "" });
+    }
 });
 
 /*
@@ -287,22 +291,24 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     Get info about volume_name.
 */
 app.post("/VolumeDriver.Get", (request, response) => {
-    console.log(request.body);
-
     const req = request.body as { Name: string };
     const imageName = getImageName(req.Name);
     const mountPoint = `/mnt/volumes/${imageName}`;
 
     console.log(`Getting info about rbd volume ${imageName}`);
 
-    response.json({
-        Volume: {
-          Name: req.Name,
-          Mountpoint: mountPoint,
-          Status: {}
-        },
-        Err: ""
-      });
+    if (mountPointTable.has(mountPoint)) {
+        response.json({
+            Volume: {
+            Name: req.Name,
+            Mountpoint: mountPoint,
+            Status: {}
+            },
+            Err: ""
+        });
+    } else {
+        response.json({ Err: "" });
+    }
 });
 
 /*
