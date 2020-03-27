@@ -2,7 +2,6 @@ import express from "express";
 import bodyParser from "body-parser";
 import util from 'util';
 import child_process from "child_process";
-const exec = util.promisify(child_process.exec);
 const execFile = util.promisify(child_process.execFile);
 import process from "process";
 import fs from "fs";
@@ -72,7 +71,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
 
     let device = "";
     try {
-        const { stdout, stderr } = await exec(`rbd map ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["map", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         device = (stdout as string).trim();
     }
@@ -82,7 +81,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`mkfs.${fstype} ${device}`, { timeout: 120000 });
+        const { stdout, stderr } = await execFile(`mkfs.${fstype}`, [device], { timeout: 120000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
@@ -92,7 +91,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.error(stdout);
     }
@@ -117,7 +116,7 @@ app.post("/VolumeDriver.Remove", async (request, response) => {
     console.log(`Removing rbd volume ${imageName}`);
 
     try {
-        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
@@ -127,7 +126,7 @@ app.post("/VolumeDriver.Remove", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`rbd remove --no-progress ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["remove", "--no-progress", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
@@ -156,7 +155,7 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
 
     let device = "";
     try {
-        const { stdout, stderr } = await exec(`rbd map ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["map", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         device = (stdout as string).trim();
     }
@@ -174,7 +173,7 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`mount ${device} ${mountPoint}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("mount", [device, mountPoint], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
@@ -256,7 +255,7 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     } 
 
     try {
-        const { stdout, stderr } = await exec(`umount ${mountPoint}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("umount", [mountPoint], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
@@ -276,7 +275,7 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     }
 
     try {
-        const { stdout, stderr } = await exec(`rbd unmap ${imageName}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
