@@ -15,3 +15,4 @@ docker rmi robkaandorp/rbd:v15.2
 
 docker plugin create robkaandorp/rbd:v15.2 .
 docker plugin enable robkaandorp/rbd:v15.2
+docker plugin ls
