@@ -325,7 +325,7 @@ app.post("/VolumeDriver.Get", async (request, response) => {
         response.json({
             Volume: {
                 Name: req.Name,
-                Mountpoint: entry?.mountPoint,
+                Mountpoint: entry?.mountPoint || "",
                 Status: {}
             },
             Err: ""
@@ -365,7 +365,7 @@ app.post("/VolumeDriver.List", async (request, response) => {
 
             return {
                 Name: name,
-                Mountpoint: entry?.mountPoint
+                Mountpoint: entry?.mountPoint || ""
             };
         }),
         Err: ""
