@@ -1,7 +1,7 @@
 #!/bin/bash
 
-docker volume disable robkaandorp/rbd:v15.2 -f
-docker volume rm robkaandorp/rbd:v15.2 -f
+docker plugin disable robkaandorp/rbd:v15.2 -f
+docker plugin rm robkaandorp/rbd:v15.2 -f
 rm -rf rootfs
 
 git pull
