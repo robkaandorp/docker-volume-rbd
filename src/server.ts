@@ -1,7 +1,9 @@
 import express from "express";
 import bodyParser from "body-parser";
 import util from 'util';
-const exec = util.promisify(require('child_process').exec);
+import child_process from "child_process";
+const exec = util.promisify(child_process.exec);
+const execFile = util.promisify(child_process.execFile);
 import process from "process";
 import fs from "fs";
 
@@ -59,7 +61,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     console.log(`Creating rbd volume ${imageName}`);
 
     try {
-        const { stdout, stderr } = await exec(`rbd create ${imageName} --size ${size}`, { timeout: 30000 });
+        const { stdout, stderr } = await execFile("rbd", ["create", imageName, "--size", size], { timeout: 30000 });
         if (stderr) console.error(stderr);
         if (stdout) console.log(stdout);
     }
