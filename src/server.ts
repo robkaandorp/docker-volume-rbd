@@ -292,7 +292,7 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
 /*
     Get info about volume_name.
 */
-app.post("/VolumeDriver.Get", (request, response) => {
+app.post("/VolumeDriver.Get", async (request, response) => {
     const req = request.body as { Name: string };
     const imageName = getImageName(req.Name);
     const mountPoint = `/mnt/volumes/${imageName}`;
@@ -302,12 +302,31 @@ app.post("/VolumeDriver.Get", (request, response) => {
 
     console.log(`Getting info about rbd volume ${imageName}`);
 
+    let rbdList: string[] = [];
+
+    try {
+        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
+        if (stderr) console.log(stderr);
+        
+        if (stdout) {
+            rbdList = stdout.split(/\s+/);
+        }
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd list command failed with code ${error.code}: ${error.message}` });
+    }
+
+    if (!rbdList.find(i => i === req.Name)) {
+        response.json({ Err: "" });
+    }
+
     if (mountPointTable.has(mountPoint)) {
         response.json({
             Volume: {
-            Name: req.Name,
-            Mountpoint: entry?.mountPoint,
-            Status: {}
+                Name: req.Name,
+                Mountpoint: entry?.mountPoint,
+                Status: {}
             },
             Err: ""
         });
@@ -334,7 +353,7 @@ app.post("/VolumeDriver.List", async (request, response) => {
     }
     catch (error) {
         console.error(error);
-        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: `rbd list command failed with code ${error.code}: ${error.message}` });
     }
 
     response.json({
