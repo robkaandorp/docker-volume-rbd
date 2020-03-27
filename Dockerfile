@@ -1,7 +1,7 @@
 FROM ceph/ceph:v15.2 AS base
 RUN curl -sL https://rpm.nodesource.com/setup_12.x | bash -
 RUN yum install -y nodejs
-RUN yum clean packages && yum clean metadata && yum clean all
+RUN yum clean packages && yum clean metadata && yum clean all && rm -rf /var/cache/dnf
 
 FROM base AS builder
 COPY . /app
