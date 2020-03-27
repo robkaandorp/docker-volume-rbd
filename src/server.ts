@@ -153,6 +153,16 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
 
     console.log(`Mounting rbd volume ${imageName}`);
 
+    if (mountPointTable.has(mountPoint)) {
+        console.log(`${mountPoint} already mounted, nothing to do`);
+        mountPointTable.get(mountPoint).references.push(req.ID);
+
+        return response.json({
+            MountPoint: mountPoint,
+            Err: ""
+        });
+    }
+
     let device = "";
     try {
         const { stdout, stderr } = await execFile("rbd", ["map", imageName], { timeout: 30000 });
@@ -182,16 +192,12 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
         return response.json({ Err: `mount command failed with code ${error.code}: ${error.message}` });
     }
 
-    if (mountPointTable.has(mountPoint)) {
-        mountPointTable.get(mountPoint).references.push(req.ID);
-    } else {
-        mountPointTable.set(mountPoint, 
-            new MountPointEntry( 
-                req.Name, 
-                imageName, 
-                mountPoint,
-                req.ID));
-    }
+    mountPointTable.set(mountPoint, 
+        new MountPointEntry( 
+            req.Name, 
+            imageName, 
+            mountPoint,
+            req.ID));
     
     response.json({
         MountPoint: mountPoint,
