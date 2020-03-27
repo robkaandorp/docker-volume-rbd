@@ -296,6 +296,9 @@ app.post("/VolumeDriver.Get", (request, response) => {
     const req = request.body as { Name: string };
     const imageName = getImageName(req.Name);
     const mountPoint = `/mnt/volumes/${imageName}`;
+    const entry = mountPointTable.has(mountPoint) 
+        ? mountPointTable.get(mountPoint)
+        : null;
 
     console.log(`Getting info about rbd volume ${imageName}`);
 
@@ -303,7 +306,7 @@ app.post("/VolumeDriver.Get", (request, response) => {
         response.json({
             Volume: {
             Name: req.Name,
-            Mountpoint: mountPoint,
+            Mountpoint: entry?.mountPoint,
             Status: {}
             },
             Err: ""
@@ -316,14 +319,34 @@ app.post("/VolumeDriver.Get", (request, response) => {
 /*
     Get the list of volumes registered with the plugin.
 */
-app.post("/VolumeDriver.List", (request, response) => {
+app.post("/VolumeDriver.List", async (request, response) => {
     console.log("Getting list of registered rbd volumes");
 
+    let rbdList: string[] = [];
+
+    try {
+        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
+        if (stderr) console.log(stderr);
+        
+        if (stdout) {
+            rbdList = stdout.split(/\s+/);
+        }
+    }
+    catch (error) {
+        console.error(error);
+        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+    }
+
     response.json({
-        Volumes: [ ...mountPointTable.keys() ].map((mountPoint: string) => {
+        Volumes: rbdList.map((name: string) => {
+            const mountPoint = `/mnt/volumes/${getImageName(name)}`;
+            const entry = mountPointTable.has(mountPoint) 
+                ? mountPointTable.get(mountPoint)
+                : null;
+
             return {
-                Name: mountPointTable.get(mountPoint).name,
-                Mountpoint: mountPoint
+                Name: name,
+                Mountpoint: entry?.mountPoint
             };
         }),
         Err: ""
