@@ -11,4 +11,4 @@ RUN npx tsc
 RUN npm prune --production
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes /etc/ceph
 RUN chmod +x entrypoint.sh
-CMD ["node", "dist/server.js"]
+CMD ["/app/entrypoint.sh"]
