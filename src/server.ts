@@ -1,15 +1,15 @@
 import express from "express";
 import bodyParser from "body-parser";
-import util from 'util';
-import child_process from "child_process";
-const execFile = util.promisify(child_process.execFile);
 import process from "process";
-import fs from "fs";
+
+import Rbd from "./rbd";
+import MountPointEntry from "./mountPointEntry";
 
 const socketAddress = "/run/docker/plugins/rbd.sock";
 const pool = process.env.RBD_CONF_POOL || "rbd";
 const cluster = process.env.RBD_CONF_CLUSTER || "ceph";
 const user = process.env.RBD_CONF_KEYRING_USER || "admin";
+const rbd = new Rbd({ pool });
 
 const app = express();
 app.use(bodyParser.json({ strict: false, type: req => true }));
@@ -24,26 +24,10 @@ app.post("/Plugin.Activate", (request, response) => {
     });
 });
 
-class MountPointEntry {
-    constructor(
-        readonly name: string,
-        readonly imageName: string,
-        readonly mountPoint: string,
-        referenceId: string) {
-        this.references = [referenceId];
-    }
-
-    references: string[];
-
-    hasReference(id: string): boolean {
-        return !!this.references.find(refid => refid === id);
-    }
-}
-
 let mountPointTable = new Map<string, MountPointEntry>();
 
-function getImageName(volumeName: string): string {
-    return `${pool}/${volumeName}`;
+function getMountPoint(name: string): string {
+    return `/mnt/volumes/${pool}/${name}`;
 }
 
 /*
@@ -53,51 +37,19 @@ function getImageName(volumeName: string): string {
 */
 app.post("/VolumeDriver.Create", async (request, response) => {
     const req = request.body as { Name: string, Opts: { size: string, fstype: string } };
-    const imageName = getImageName(req.Name);
     const fstype = req.Opts?.fstype || "xfs";
     const size = req.Opts?.size || "200M";
 
-    console.log(`Creating rbd volume ${imageName}`);
+    console.log(`Creating rbd volume ${name}`);
 
     try {
-        const { stdout, stderr } = await execFile("rbd", ["create", imageName, "--size", size], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        if (stdout) console.log(stdout);
+        await rbd.create(req.Name, size);
+        let device = await rbd.map(req.Name);
+        await rbd.makeFilesystem(fstype, device);
+        await rbd.unMap(req.Name);
     }
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd create command failed with code ${error.code}: ${error.message}` });
-    }
-
-    let device = "";
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["map", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        device = (stdout as string).trim();
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd map command failed with code ${error.code}: ${error.message}` });
-    }
-
-    try {
-        const { stdout, stderr } = await execFile(`mkfs.${fstype}`, [device], { timeout: 120000 });
-        if (stderr) console.error(stderr);
-        if (stdout) console.log(stdout);
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `mkfs.${fstype} ${device} command failed with code ${error.code}: ${error.message}` });
-    }
-
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        if (stdout) console.log(stdout);
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: error.message });
     }
 
     response.json({
@@ -105,62 +57,21 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     });
 });
 
-async function isMapped(name: string): Promise<boolean> {
-    let mapped: any[];
-
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["showmapped", "--format", "json"], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-
-        mapped = JSON.parse(stdout);
-    }
-    catch (error) {
-        console.error(error);
-        throw { Err: `rbd showmapped command failed with code ${error.code}: ${error.message}` };
-    }
-
-    return !!mapped.find(i => i.pool === pool && i.name === name);
-}
-
 /*
     Delete the specified volume from disk. This request is issued when a user invokes 
     docker rm -v to remove volumes associated with a container.
 */
 app.post("/VolumeDriver.Remove", async (request, response) => {
     const req = request.body as { Name: string };
-    const imageName = getImageName(req.Name);
 
-    console.log(`Removing rbd volume ${imageName}`);
-
-    let mustUnmap = false;
+    console.log(`Removing rbd volume ${req.Name}`);
 
     try {
-        mustUnmap = await isMapped(req.Name);
-    } 
-    catch (error) {
-        return response.json(error);
-    }
-
-    if (mustUnmap) {
-        try {
-            const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
-            if (stderr) console.log(stderr);
-            if (stdout) console.log(stdout);
-        }
-        catch (error) {
-            console.error(error);
-            return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
-        }
-    }
-
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["remove", "--no-progress", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        if (stdout) console.log(stdout);
+        await rbd.unMap(req.Name);
+        await rbd.remove(req.Name);
     }
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd remove command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: error.message });
     }
 
     response.json({
@@ -176,10 +87,9 @@ app.post("/VolumeDriver.Remove", async (request, response) => {
 */
 app.post("/VolumeDriver.Mount", async (request, response) => {
     const req = request.body as { Name: string, ID: string };
-    const imageName = getImageName(req.Name);
-    const mountPoint = `/mnt/volumes/${imageName}`;
+    const mountPoint = getMountPoint(req.Name);
 
-    console.log(`Mounting rbd volume ${imageName}`);
+    console.log(`Mounting rbd volume ${req.Name}`);
 
     if (mountPointTable.has(mountPoint)) {
         console.log(`${mountPoint} already mounted, nothing to do`);
@@ -191,39 +101,17 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
         });
     }
 
-    let device = "";
     try {
-        const { stdout, stderr } = await execFile("rbd", ["map", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        device = (stdout as string).trim();
+        let device = await rbd.map(req.Name);
+        await rbd.mount(device, mountPoint);
     }
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd map command failed with code ${error.code}: ${error.message}` });
-    }
-
-    try {
-        fs.mkdirSync(mountPoint, { recursive: true });
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `mkdir command failed with code ${error.code}: ${error.message}` });
-    }
-
-    try {
-        const { stdout, stderr } = await execFile("mount", [device, mountPoint], { timeout: 30000 });
-        if (stderr) console.error(stderr);
-        if (stdout) console.log(stdout);
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `mount command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: error.message });
     }
 
     mountPointTable.set(mountPoint, 
         new MountPointEntry( 
             req.Name, 
-            imageName, 
             mountPoint,
             req.ID));
     
@@ -238,10 +126,9 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
 */
 app.post("/VolumeDriver.Path", (request, response) => {
     const req = request.body as { Name: string };
-    const imageName = getImageName(req.Name);
-    const mountPoint = `/mnt/volumes/${imageName}`;
+    const mountPoint = getMountPoint(req.Name);
 
-    console.log(`Request path of rbd mount ${imageName}`);
+    console.log(`Request path of rbd mount ${req.Name}`);
 
     if (mountPointTable.has(mountPoint)) {
         response.json({
@@ -261,13 +148,12 @@ app.post("/VolumeDriver.Path", (request, response) => {
 */
 app.post("/VolumeDriver.Unmount", async (request, response) => {
     const req = request.body as { Name: string, ID: string };
-    const imageName = getImageName(req.Name);
-    const mountPoint = `/mnt/volumes/${imageName}`;
+    const mountPoint = getMountPoint(req.Name);
 
-    console.log(`Unmounting rbd volume ${imageName}`);
+    console.log(`Unmounting rbd volume ${req.Name}`);
 
     if (!mountPointTable.has(mountPoint)) {
-        const error = `Unknown volume ${imageName}`;
+        const error = `Unknown volume ${req.Name}`;
         console.error(error);
         return response.json({ Err: error });
     }
@@ -275,7 +161,7 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     let mountPointEntry = mountPointTable.get(mountPoint);
 
     if (!mountPointEntry.hasReference(req.ID)) {
-        const error = `Unknown caller id ${req.ID} for volume ${imageName}`;
+        const error = `Unknown caller id ${req.ID} for volume ${req.Name}`;
         console.error(error);
         return response.json({ Err: error });
     }
@@ -283,39 +169,18 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     const remainingIds = mountPointEntry.references.filter(id => id !== req.ID);
 
     if (remainingIds.length > 0) {
-        console.log(`${remainingIds.length} references to volume ${imageName} remaining, not unmounting..`);
+        console.log(`${remainingIds.length} references to volume ${req.Name} remaining, not unmounting..`);
         mountPointEntry.references = remainingIds;
         return response.json({ Err: "" });
     } 
 
     try {
-        const { stdout, stderr } = await execFile("umount", [mountPoint], { timeout: 30000 });
-        if (stderr) console.error(stderr);
-        if (stdout) console.log(stdout);
+        await rbd.unmount(mountPoint);
+        mountPointTable.delete(mountPoint);
+        await rbd.unMap(req.Name);
     }
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `umount command failed with code ${error.code}: ${error.message}` });
-    }
-
-    mountPointTable.delete(mountPoint);
-
-    try {
-        fs.rmdirSync(mountPoint);
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `rmdir command failed with code ${error.code}: ${error.message}` });
-    }
-
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["unmap", imageName], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        if (stdout) console.log(stdout);
-    }
-    catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd unmap command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: error.message });
     }
 
     response.json({
@@ -323,44 +188,24 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
     });
 });
 
-async function isRbdImage(name: string): Promise<boolean> {
-    let rbdList: string[] = [];
-
-    try {
-        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        
-        if (stdout) {
-            rbdList = stdout.split(/\s+/);
-        }
-    }
-    catch (error) {
-        console.error(error);
-        throw { Err: `rbd list command failed with code ${error.code}: ${error.message}` };
-    }
-
-    return !!rbdList.find(i => i === name);
-}
-
 /*
     Get info about volume_name.
 */
 app.post("/VolumeDriver.Get", async (request, response) => {
     const req = request.body as { Name: string };
-    const imageName = getImageName(req.Name);
-    const mountPoint = `/mnt/volumes/${imageName}`;
+    const mountPoint = getMountPoint(req.Name);
     const entry = mountPointTable.has(mountPoint) 
         ? mountPointTable.get(mountPoint)
         : null;
 
-    console.log(`Getting info about rbd volume ${imageName}`);
+    console.log(`Getting info about rbd volume ${req.Name}`);
 
     try {
-        if (!await isRbdImage(req.Name)) {
+        if (!await rbd.isRbdImage(req.Name)) {
             response.json({ Err: "" });
         }
     } catch (error) {
-        return response.json(error);
+        return response.json({ Err: error.message });
     }
 
     response.json({
@@ -382,21 +227,15 @@ app.post("/VolumeDriver.List", async (request, response) => {
     let rbdList: string[] = [];
 
     try {
-        const { stdout, stderr } = await execFile("rbd", ["list"], { timeout: 30000 });
-        if (stderr) console.log(stderr);
-        
-        if (stdout) {
-            rbdList = stdout.split(/\s+/);
-        }
+        rbdList = await rbd.list();
     }
     catch (error) {
-        console.error(error);
-        return response.json({ Err: `rbd list command failed with code ${error.code}: ${error.message}` });
+        return response.json({ Err: error.message });
     }
 
     response.json({
         Volumes: rbdList.map((name: string) => {
-            const mountPoint = `/mnt/volumes/${getImageName(name)}`;
+            const mountPoint = getMountPoint(name);
             const entry = mountPointTable.has(mountPoint) 
                 ? mountPointTable.get(mountPoint)
                 : null;
