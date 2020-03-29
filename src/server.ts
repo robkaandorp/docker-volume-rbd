@@ -40,7 +40,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
     const fstype = req.Opts?.fstype || "xfs";
     const size = req.Opts?.size || "200M";
 
-    console.log(`Creating rbd volume ${name}`);
+    console.log(`Creating rbd volume ${req.Name}`);
 
     try {
         await rbd.create(req.Name, size);
