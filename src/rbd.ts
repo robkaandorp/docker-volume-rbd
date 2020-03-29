@@ -97,7 +97,7 @@ export default class Rbd {
 
     async remove(name: string): Promise<void> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["remove", "--pool", this.options.pool, "--no-progress", name], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", ["trash", "move", "--pool", this.options.pool, name], { timeout: 30000 });
             if (stderr) console.log(stderr);
             if (stdout) console.log(stdout);
         }
