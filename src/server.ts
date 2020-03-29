@@ -204,7 +204,7 @@ app.post("/VolumeDriver.Get", async (request, response) => {
         const info = await rbd.getInfo(req.Name);
 
         if (!info) {
-            response.json({ Err: "" });
+            return response.json({ Err: "" });
         }
 
         response.json({
