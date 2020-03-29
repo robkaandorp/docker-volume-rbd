@@ -201,21 +201,25 @@ app.post("/VolumeDriver.Get", async (request, response) => {
     console.log(`Getting info about rbd volume ${req.Name}`);
 
     try {
-        if (!await rbd.isRbdImage(req.Name)) {
+        const info = await rbd.getInfo(req.Name);
+
+        if (!info) {
             response.json({ Err: "" });
         }
+
+        response.json({
+            Volume: {
+                Name: req.Name,
+                Mountpoint: entry?.mountPoint || "",
+                Status: {
+                    size: info.size
+                }
+            },
+            Err: ""
+        });
     } catch (error) {
         return response.json({ Err: error.message });
     }
-
-    response.json({
-        Volume: {
-            Name: req.Name,
-            Mountpoint: entry?.mountPoint || "",
-            Status: {}
-        },
-        Err: ""
-    });
 });
 
 /*
@@ -224,29 +228,27 @@ app.post("/VolumeDriver.Get", async (request, response) => {
 app.post("/VolumeDriver.List", async (request, response) => {
     console.log("Getting list of registered rbd volumes");
 
-    let rbdList: string[] = [];
-
     try {
-        rbdList = await rbd.list();
+        const rbdList = await rbd.list();
+
+        response.json({
+            Volumes: rbdList.map(info => {
+                const mountPoint = getMountPoint(info.image);
+                const entry = mountPointTable.has(mountPoint) 
+                    ? mountPointTable.get(mountPoint)
+                    : null;
+    
+                return {
+                    Name: name,
+                    Mountpoint: entry?.mountPoint || ""
+                };
+            }),
+            Err: ""
+          });
     }
     catch (error) {
         return response.json({ Err: error.message });
     }
-
-    response.json({
-        Volumes: rbdList.map((name: string) => {
-            const mountPoint = getMountPoint(name);
-            const entry = mountPointTable.has(mountPoint) 
-                ? mountPointTable.get(mountPoint)
-                : null;
-
-            return {
-                Name: name,
-                Mountpoint: entry?.mountPoint || ""
-            };
-        }),
-        Err: ""
-      });
 });
 
 app.post("/VolumeDriver.Capabilities", (request, response) => {

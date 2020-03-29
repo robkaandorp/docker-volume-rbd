@@ -52,9 +52,9 @@ export default class Rbd {
         }
     }
 
-    async list() {
+    async list(): Promise<{ image: string, id: string, size: number, format: number }[]> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["list", "--pool", this.options.pool, "--format", "json"], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", ["list", "--pool", this.options.pool, "--long", "--format", "json"], { timeout: 30000 });
             if (stderr) console.log(stderr);
             
             return JSON.parse(stdout);
@@ -65,10 +65,10 @@ export default class Rbd {
         }
     }
     
-    async isRbdImage(name: string): Promise<boolean> {
-        let rbdList: string[] = await this.list();
+    async getInfo(name: string): Promise<{ image: string, id: string, size: number, format: number }> {
+        let rbdList = await this.list();
     
-        return !!rbdList.find(i => i === name);
+        return rbdList.find(i => i.image === name);
     }
 
     async create(name: string, size: string): Promise<void> {
