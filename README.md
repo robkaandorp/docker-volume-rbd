@@ -38,4 +38,4 @@ size and fstype are optional and default to 200M and xfs respectively.
 
 In my development setup (hyper-v virtualized ceph and docker nodes), the xfs filesystem gives me better write performance over ext4, read performance is about the same.
 
-**WARNING**: do _NOT_ mount a volume on multiple hosts at the same time to prevent filesystem corruption!
+**WARNING**: do _NOT_ mount a volume on multiple hosts at the same time to prevent filesystem corruption! If you need to share a filesysem between hosts use CephFS or Cifs.
