@@ -102,7 +102,12 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
     }
 
     try {
-        let device = await rbd.map(req.Name);
+        let device = await rbd.isMapped(req.Name);
+
+        if (!device) {
+            device = await rbd.map(req.Name);
+        }
+
         await rbd.mount(device, mountPoint);
     }
     catch (error) {
@@ -262,10 +267,6 @@ app.post("/VolumeDriver.Capabilities", (request, response) => {
 });
 
 
-app.listen(socketAddress, err => {
-    if (err) {
-        return console.error(err);
-    }
-
+app.listen(socketAddress, () => {
     console.log(`Plugin rbd listening on socket ${socketAddress}`);
 });

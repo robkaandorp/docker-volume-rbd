@@ -6,7 +6,7 @@ import fs from "fs";
 export default class Rbd {
     constructor(readonly options: { pool: string }) { }
 
-    async isMapped(name: string): Promise<boolean> {
+    async isMapped(name: string): Promise<string> {
         let mapped: any[];
     
         try {
@@ -20,7 +20,13 @@ export default class Rbd {
             throw new Error(`rbd showmapped command failed with code ${error.code}: ${error.message}`);
         }
     
-        return !!mapped.find(i => i.pool === this.options.pool && i.name === name);
+        const entry = mapped.find(i => i.pool === this.options.pool && i.name === name);
+
+        if (!entry) {
+            return null;
+        }
+
+        return entry.device;
     }
     
     async map(name: string): Promise<string> {
