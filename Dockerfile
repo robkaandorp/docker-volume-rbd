@@ -15,4 +15,5 @@ LABEL maintainer="Rob Kaandorp <rob@di.nl>"
 COPY --from=builder /app /app
 WORKDIR /app
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes /etc/ceph
-CMD ["/app/dist/server.js"]
+RUN chmod +x entrypoint.sh
+CMD ["/app/entrypoint.sh"]
