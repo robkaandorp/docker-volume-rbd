@@ -6,7 +6,7 @@ RUN apt-get install -y locales curl && \
     dpkg-reconfigure --frontend=noninteractive locales && \
     update-locale LANG=$LANG
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
-RUN apt-get install -qq nodejs ceph-common
+RUN apt-get install -qq nodejs ceph-common xfsprogs
 RUN apt-get clean
 
 FROM base AS builder
