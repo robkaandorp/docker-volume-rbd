@@ -27,7 +27,7 @@ jobs:
         docker rm -vf "$id"
         docker rmi robkaandorp/rbd:${{ vars.VERSION_TAG }}
     - name: Create tar archive
-      run: tar -cf docker-volume-rbd-${{ env.RELEASE_VERSION }}.tgz plugin/
+      run: sudo tar -cf docker-volume-rbd-${{ env.RELEASE_VERSION }}.tgz plugin/
     - name: GitHub release
       run: |
         echo ${{ github.token }} | gh auth login --with-token
