@@ -14,6 +14,10 @@
         {
             "name": "RBD_CONF_KEYRING_USER",
             "settable": ["value"]
+        },
+        {
+            "name": "RBD_CONF_MAP_OPTIONS,
+            "settable": ["value"]
         }
     ],
     "network": {

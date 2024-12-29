@@ -5,7 +5,7 @@ import fs from "fs";
 
 export default class Rbd {
     // ToDo: Actually used the passed in options for cluster and user
-    constructor(readonly options: { pool: string, cluster: string, user: string, mapoptions: string[] }) { }
+    constructor(readonly options: { pool: string, cluster: string, user: string, map_options: string[] }) { }
 
     async isMapped(name: string): Promise<string> {
         let mapped: any[];
@@ -32,7 +32,7 @@ export default class Rbd {
     
     async map(name: string): Promise<string> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["map", ...this.options.mapoptions, "--pool", this.options.pool, name], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", ["map", ...this.options.map_options, "--pool", this.options.pool, name], { timeout: 30000 });
             if (stderr) console.log(stderr);
     
             return (stdout as string).trim();
