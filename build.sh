@@ -22,5 +22,5 @@ docker rm -vf "$id"
 docker rmi $pluginnametagged
 
 sudo docker plugin create $pluginnametagged plugin/
-# docker plugin enable $pluginnametagged
+docker plugin enable $pluginnametagged
 docker plugin ls
