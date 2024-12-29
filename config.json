@@ -16,7 +16,7 @@
             "settable": ["value"]
         },
         {
-            "name": "RBD_CONF_MAP_OPTIONS,
+            "name": "RBD_CONF_MAP_OPTIONS",
             "settable": ["value"]
         }
     ],
