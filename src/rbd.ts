@@ -4,7 +4,8 @@ const execFile = util.promisify(child_process.execFile);
 import fs from "fs";
 
 export default class Rbd {
-    constructor(readonly options: { pool: string }) { }
+    // ToDo: Actually used the passed in options for cluster and user
+    constructor(readonly options: { pool: string, cluster: string, user: string, mapoptions: string[] }) { }
 
     async isMapped(name: string): Promise<string> {
         let mapped: any[];
@@ -31,7 +32,7 @@ export default class Rbd {
     
     async map(name: string): Promise<string> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["map", "--pool", this.options.pool, name], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", ["map", ...this.options.mapoptions, "--pool", this.options.pool, name], { timeout: 30000 });
             if (stderr) console.log(stderr);
     
             return (stdout as string).trim();
