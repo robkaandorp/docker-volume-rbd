@@ -15,7 +15,9 @@ docker build . -t $pluginnametagged
 id=$(docker create $pluginnametagged true)
 mkdir -p plugin/rootfs
 cp config.json plugin/
-docker export "$id" | sudo tar -x -C plugin/rootfs
+docker export "$id" -o plugin/container.tar
+sudo tar --extract -f plugin/container.tar --directory plugin/rootfs
+rm plugin/container.tar
 docker rm -vf "$id"
 docker rmi $pluginnametagged
 
