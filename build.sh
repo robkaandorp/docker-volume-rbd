@@ -21,6 +21,6 @@ rm plugin/container.tar
 docker rm -vf "$id"
 docker rmi $pluginnametagged
 
-docker plugin create $pluginnametagged plugin/
+sudo docker plugin create $pluginnametagged plugin/
 docker plugin enable $pluginnametagged
 docker plugin ls
