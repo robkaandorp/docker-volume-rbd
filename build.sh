@@ -7,7 +7,7 @@ echo $pluginnametagged
 
 docker plugin disable $pluginnametagged -f
 docker plugin rm $pluginnametagged -f
-rm -rf plugin
+sudo rm -rf plugin
 
 git pull
 docker build . -t $pluginnametagged
