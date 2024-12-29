@@ -11,9 +11,15 @@ For normal use, setup the /etc/ceph folder on the host and install with:
 
 All available options (as shown in [`config.json`](./config.json) and from line 9 in [`src\server.ts`](./src/server.ts#L9)) are:
 
-- `RBD_CONF_POOL` (default: `rbd`)
-- `RBD_CONF_CLUSTER` (default: `ceph`)
-- `RBD_CONF_KEYRING_USER` (default: `admin`)
+- `RBD_CONF_POOL`
+  - default: `rbd`
+- `RBD_CONF_CLUSTER`
+  - default: `ceph`
+- `RBD_CONF_KEYRING_USER`
+  - default: `admin`
+- `RBD_CONF_MAP_OPTIONS`
+  - default: `--exclusive`: ensures that only one instance can mount the rbd at a time to prevent corruption)<br >
+  - Provide a semicolon separated list to provide multiple options directly to the `rbd map` command. eg `RBD_CONF_MAP_OPTIONS="--exclusive;--read-only;--options noshare,lock_on_read"`
 
 Build with or use the [`build.sh`](./build.sh) build script (_do not do this on a production system!_):
 
