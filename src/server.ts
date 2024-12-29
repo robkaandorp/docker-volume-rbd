@@ -9,7 +9,7 @@ const socketAddress = "/run/docker/plugins/rbd.sock";
 const pool = process.env.RBD_CONF_POOL || "rbd";
 const cluster = process.env.RBD_CONF_CLUSTER || "ceph"; // ToDo: Not utilised currently
 const user = process.env.RBD_CONF_KEYRING_USER || "admin"; // ToDo: Not utilised currently
-const mapoptions = process.env.RBD_CONF_MAPOPTIONS.split(',') || ["--exclusive"] // default to an exclusive lock when mapping to prevent multiple containers attempting to mount the block device
+const mapoptions = process.env.RBD_CONF_MAPOPTIONS.split(',') || ["--exclusive"]; // default to an exclusive lock when mapping to prevent multiple containers attempting to mount the block device
 const rbd = new Rbd({ pool: pool, cluster: cluster, user: user, mapoptions: mapoptions });
 
 const app = express();
