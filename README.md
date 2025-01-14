@@ -9,9 +9,19 @@ For normal use, setup the /etc/ceph folder on the host and install with:
 % docker plugin install robkaandorp/rbd:v17.2 RBD_CONF_POOL="rbd"
 ```
 
-where RBD_CONF_POOL is optional and defaults to "rbd".
+All available options (as shown in [`config.json`](./config.json) and from line 9 in [`src\server.ts`](./src/server.ts#L9)) are:
 
-Build with or use the build.sh build script (_do not do this on a production system!_):
+- `RBD_CONF_POOL`
+  - default: `rbd`
+- `RBD_CONF_CLUSTER`
+  - default: `ceph`
+- `RBD_CONF_KEYRING_USER`
+  - default: `admin`
+- `RBD_CONF_MAP_OPTIONS`
+  - default: `--exclusive`: ensures that only one instance can mount the rbd at a time to prevent corruption)<br >
+  - Provide a semicolon separated list to provide multiple options directly to the `rbd map` command. eg `RBD_CONF_MAP_OPTIONS="--exclusive;--read-only;--options noshare,lock_on_read"`
+
+Build with or use the [`build.sh`](./build.sh) build script (_do not do this on a production system!_):
 
 ```
 % docker build . -t robkaandorp/rbd:v17.2
@@ -27,6 +37,13 @@ Build with or use the build.sh build script (_do not do this on a production sys
 
 % docker plugin enable robkaandorp/rbd:v17.2
 ```
+
+If you install with the build script rather than via the Docker Hub OR you need to change the options after install, then you can configure the options with:
+
+```shell
+docker plugin set robkaandorp/rbd:v17.2 RBD_CONF_POOL="rbd.custom" RBD_CONF_KEYRING_USER="customuser"
+```
+
 
 Example of how to create a volume:
 
