@@ -6,7 +6,7 @@ RUN apt-get install -y locales curl && \
     dpkg-reconfigure --frontend=noninteractive locales && \
     update-locale LANG=$LANG
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-RUN apt-get install -qq nodejs ceph-common xfsprogs
+RUN apt-get install -qq nodejs ceph-common xfsprogs kmod
 RUN apt-get clean
 
 FROM base AS builder
