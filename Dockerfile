@@ -12,9 +12,10 @@ RUN apt-get clean
 FROM base AS builder
 COPY . /app
 WORKDIR /app
-RUN npm ci
-RUN npx tsc
-RUN npm prune --production
+RUN corepack enable pnpm
+RUN pnpm install --frozen-lockfile
+RUN pnpm run build
+RUN pnpm prune --prod
 
 FROM base
 LABEL maintainer="Rob Kaandorp <rob@di.nl>"

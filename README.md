@@ -18,7 +18,7 @@ All available options (as shown in [`config.json`](./config.json) and from line 
 - `RBD_CONF_KEYRING_USER`
   - default: `admin`
 - `RBD_CONF_MAP_OPTIONS`
-  - default: `--exclusive`: ensures that only one instance can mount the rbd at a time to prevent corruption)<br >
+  - default: `--exclusive`: ensures that only one instance can mount the rbd at a time to prevent corruption)
   - Provide a semicolon separated list to provide multiple options directly to the `rbd map` command. eg `RBD_CONF_MAP_OPTIONS="--exclusive;--read-only;--options noshare,lock_on_read"`
 
 Build with or use the [`build.sh`](./build.sh) build script (_do not do this on a production system!_):
