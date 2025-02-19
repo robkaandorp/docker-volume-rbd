@@ -1,5 +1,4 @@
 import express from "express";
-import bodyParser from "body-parser";
 import process from "process";
 
 import Rbd from "./rbd";
@@ -13,7 +12,7 @@ const map_options = process.env.RBD_CONF_MAP_OPTIONS ? process.env.RBD_CONF_MAP_
 const rbd = new Rbd({ pool: pool, cluster: cluster, user: user, map_options: map_options });
 
 const app = express();
-app.use(bodyParser.json({ strict: false, type: req => true }));
+app.use(express.json({ strict: false, type: req => true }));
 
 // Documentation about docker volume plugins can be found here: https://docs.docker.com/engine/extend/plugins_volume/
 
