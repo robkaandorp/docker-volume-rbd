@@ -24,11 +24,11 @@
   },
   "homepage": "https://github.com/robkaandorp/docker-volume-rbd#readme",
   "devDependencies": {
-    "@types/express": "^4.17.22",
-    "typescript": "^5.8.3"
+    "@types/express": "^4.17.25",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.22.1"
   },
   "packageManager": "pnpm@10.11.0+sha512.6540583f41cc5f628eb3d9773ecee802f4f9ef9923cc45b69890fb47991d4b092964694ec3a4f738a420c918a333062c8b925d312f42e4f0c263eb603551f977"
 }
