@@ -49,7 +49,7 @@ app.post("/VolumeDriver.Create", async (request, response) => {
         await rbd.unMap(req.Name);
     }
     catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 
     response.json({
@@ -71,7 +71,7 @@ app.post("/VolumeDriver.Remove", async (request, response) => {
         await rbd.remove(req.Name);
     }
     catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 
     response.json({
@@ -93,7 +93,7 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
 
     if (mountPointTable.has(mountPoint)) {
         console.log(`${mountPoint} already mounted, nothing to do`);
-        mountPointTable.get(mountPoint).references.push(req.ID);
+        mountPointTable.get(mountPoint)!.references.push(req.ID);
 
         return response.json({
             MountPoint: mountPoint,
@@ -111,7 +111,7 @@ app.post("/VolumeDriver.Mount", async (request, response) => {
         await rbd.mount(device, mountPoint);
     }
     catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 
     mountPointTable.set(mountPoint, 
@@ -165,6 +165,12 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
 
     let mountPointEntry = mountPointTable.get(mountPoint);
 
+    if (!mountPointEntry) {
+        const error = `Unknown volume ${req.Name}`;
+        console.error(error);
+        return response.json({ Err: error });
+    }
+
     if (!mountPointEntry.hasReference(req.ID)) {
         const error = `Unknown caller id ${req.ID} for volume ${req.Name}`;
         console.error(error);
@@ -185,7 +191,7 @@ app.post("/VolumeDriver.Unmount", async (request, response) => {
         await rbd.unMap(req.Name);
     }
     catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 
     response.json({
@@ -223,7 +229,7 @@ app.post("/VolumeDriver.Get", async (request, response) => {
             Err: ""
         });
     } catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 });
 
@@ -252,7 +258,7 @@ app.post("/VolumeDriver.List", async (request, response) => {
           });
     }
     catch (error) {
-        return response.json({ Err: error.message });
+        return response.json({ Err: (error as Error).message });
     }
 });
 

@@ -1,19 +1,21 @@
 FROM ubuntu AS base
 ENV LANG=en_GB.UTF-8
-RUN apt-get update
-RUN apt-get install -y locales curl && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        locales curl ca-certificates && \
     echo "$LANG UTF-8" > /etc/locale.gen && \
     dpkg-reconfigure --frontend=noninteractive locales && \
-    update-locale LANG=$LANG
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-RUN apt-get install -qq nodejs ceph-common xfsprogs kmod
-RUN apt-get clean
+    update-locale LANG=$LANG && \
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs ceph-common xfsprogs kmod && \
+    rm -rf /var/lib/apt/lists/*
 
 FROM base AS builder
-COPY . /app
 WORKDIR /app
 RUN corepack enable pnpm
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm ci
+COPY . .
 RUN pnpm run build
 RUN pnpm prune --prod
 

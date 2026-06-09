@@ -16,7 +16,7 @@ This is a **Docker managed plugin** (not a regular container) that exposes the [
 ### Request flow
 
 1. Docker sends HTTP POST requests to the Unix socket.
-2. `src/server.ts` — Express server that handles all Docker Volume Plugin API endpoints (`/VolumeDriver.Create`, `/VolumeDriver.Mount`, `/VolumeDriver.Unmount`, etc.). Holds an in-memory `mountPointTable` (`Map<string, MountPointEntry>`) for reference-counting active mounts.
+2. `src/server.ts` — Express server (Express 5) that handles all Docker Volume Plugin API endpoints (`/VolumeDriver.Create`, `/VolumeDriver.Mount`, `/VolumeDriver.Unmount`, etc.). Holds an in-memory `mountPointTable` (`Map<string, MountPointEntry>`) for reference-counting active mounts.
 3. `src/rbd.ts` — `Rbd` class wraps Ceph CLI tools (`rbd`, `mount`, `umount`, `mkfs`) via `child_process.execFile`. All operations are async/await.
 4. `src/mountPointEntry.ts` — Tracks a mount point and the container IDs (`references[]`) currently using it. The volume is only physically unmounted when the last reference is removed.
 
@@ -36,7 +36,7 @@ The Dockerfile is a multi-stage build:
 ## Key Conventions
 
 ### API response shape
-Every Docker Volume Plugin endpoint **must** return an `Err` field — empty string on success, error message on failure. Errors are never thrown to Express; they are caught and returned as `{ Err: error.message }`.
+Every Docker Volume Plugin endpoint **must** return an `Err` field — empty string on success, error message on failure. Errors are never thrown to Express; they are caught and returned as `{ Err: (error as Error).message }`.
 
 ### `rbd remove` uses trash
 `Rbd.remove()` uses `rbd trash move` (not `rbd rm`), so removed images go to the Ceph trash rather than being permanently deleted immediately.
@@ -51,6 +51,7 @@ All `execFile` calls use a 30 000 ms timeout except `mkfs`, which uses 120 000 m
 `RBD_CONF_CLUSTER` and `RBD_CONF_KEYRING_USER` are read from the environment and stored in `Rbd.options` but are not yet passed to CLI commands (marked `// ToDo` in the source).
 
 ### TypeScript config
+- Compiled with TypeScript 6
 - Target: `es6`, module system: `commonjs`
 - `noImplicitAny: true`
 - Output: `dist/` (committed to the image but not to git)

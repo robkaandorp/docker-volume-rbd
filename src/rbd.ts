@@ -7,7 +7,7 @@ export default class Rbd {
     // ToDo: Actually used the passed in options for cluster and user
     constructor(readonly options: { pool: string, cluster: string, user: string, map_options: string[] }) { }
 
-    async isMapped(name: string): Promise<string> {
+    async isMapped(name: string): Promise<string | null> {
         let mapped: any[];
     
         try {
@@ -18,7 +18,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`rbd showmapped command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`rbd showmapped command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     
         const entry = mapped.find(i => i.pool === this.options.pool && i.name === name);
@@ -39,7 +39,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`rbd map command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`rbd map command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
     
@@ -54,7 +54,7 @@ export default class Rbd {
             }
             catch (error) {
                 console.error(error);
-                throw new Error(`rbd unmap command failed with code ${error.code}: ${error.message}`);
+                throw new Error(`rbd unmap command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
             }
         }
     }
@@ -68,11 +68,11 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`rbd list command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`rbd list command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
     
-    async getInfo(name: string): Promise<{ image: string, id: string, size: number, format: number }> {
+    async getInfo(name: string): Promise<{ image: string, id: string, size: number, format: number } | undefined> {
         let rbdList = await this.list();
     
         return rbdList.find(i => i.image === name);
@@ -86,7 +86,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`rbd create command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`rbd create command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
 
@@ -98,7 +98,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw Error(`mkfs -t ${fstype} ${device} command failed with code ${error.code}: ${error.message}`);
+            throw Error(`mkfs -t ${fstype} ${device} command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
 
@@ -110,7 +110,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`rbd remove command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`rbd remove command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
 
@@ -124,7 +124,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`mount command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`mount command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }
 
@@ -136,7 +136,7 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
-            throw new Error(`umount command failed with code ${error.code}: ${error.message}`);
+            throw new Error(`umount command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
 
         fs.rmdirSync(mountPoint);

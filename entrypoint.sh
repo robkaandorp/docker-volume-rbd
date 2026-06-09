@@ -1,3 +1,3 @@
 #!/bin/bash
 
-node /app/dist/server.js
+exec node /app/dist/server.js
