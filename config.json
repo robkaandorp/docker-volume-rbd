@@ -29,7 +29,7 @@
 	},
 	"linux": {
         "AllowAllDevices": true,
-        "capabilities": ["CAP_SYS_ADMIN", "CAP_SYS_MODULE"],
+        "capabilities": ["CAP_SYS_ADMIN", "CAP_SYS_MODULE", "CAP_NET_ADMIN"],
         "devices": null
     },
     "mounts": [

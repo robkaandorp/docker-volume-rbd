@@ -26,7 +26,7 @@ Volumes are mounted at `/mnt/volumes/{pool}/{name}` inside the plugin container.
 
 ### Docker plugin packaging
 
-`config.json` is the Docker plugin manifest (not app config). It declares required Linux capabilities (`CAP_SYS_ADMIN`, `CAP_SYS_MODULE`), bind mounts (`/dev`, `/etc/ceph`, `/sys`, `/lib/modules`), and the settable env vars.
+`config.json` is the Docker plugin manifest (not app config). It declares required Linux capabilities (`CAP_SYS_ADMIN`, `CAP_SYS_MODULE`, `CAP_NET_ADMIN`), bind mounts (`/dev`, `/etc/ceph`, `/sys`, `/lib/modules`), and the settable env vars.
 
 The Dockerfile is a multi-stage build:
 - `base` — Ubuntu + Node.js LTS + `ceph-common` + `xfsprogs`
