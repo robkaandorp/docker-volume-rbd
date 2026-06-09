@@ -1,18 +1,15 @@
-FROM ubuntu:22.04 AS base
+FROM ubuntu:24.04 AS base
 ENV LANG=en_GB.UTF-8
-# Pin ceph-common to the Ceph Squid (19.2.x) client from the official Ceph repo.
-# Newer clients (20.x+) emit the krbd 'ms_mode' map option, which is unsupported
-# by kernels < 5.11 and breaks 'rbd map' on the swarm hosts (kernel 5.10).
+# Ubuntu 24.04 (noble) ships ceph-common 19.2 (Squid) natively and stays on the
+# 19.2.x line for the LTS lifetime. Squid clients do not emit the krbd 'ms_mode'
+# map option that breaks 'rbd map' on the swarm hosts (kernel 5.10, needs < 20.x).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        locales curl ca-certificates gnupg && \
+        locales curl ca-certificates && \
     echo "$LANG UTF-8" > /etc/locale.gen && \
     dpkg-reconfigure --frontend=noninteractive locales && \
     update-locale LANG=$LANG && \
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    curl -fsSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-squid/ jammy main" > /etc/apt/sources.list.d/ceph.list && \
-    apt-get update && \
     apt-get install -y --no-install-recommends nodejs ceph-common xfsprogs kmod && \
     rm -rf /var/lib/apt/lists/*
 
