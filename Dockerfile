@@ -4,11 +4,12 @@ ENV LANG=en_GB.UTF-8
 # 19.2.x line for the LTS lifetime. Squid clients do not emit the krbd 'ms_mode'
 # map option that breaks 'rbd map' on the swarm hosts (kernel 5.10, needs < 20.x).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        locales curl ca-certificates && \
+    apt-get install -y --no-install-recommends locales curl ca-certificates gpg && \
     echo "$LANG UTF-8" > /etc/locale.gen && \
     dpkg-reconfigure --frontend=noninteractive locales && \
     update-locale LANG=$LANG && \
+    curl -fsSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-tentacle/ noble main" | tee /etc/apt/sources.list.d/ceph.list && \
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
     apt-get install -y --no-install-recommends nodejs ceph-common xfsprogs kmod && \
     rm -rf /var/lib/apt/lists/*

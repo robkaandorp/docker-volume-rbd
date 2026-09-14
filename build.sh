@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=v19.2
+version=v20.2
 pluginname=robkaandorp/rbd
 pluginnametagged=$pluginname:$version
 echo $pluginnametagged
