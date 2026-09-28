@@ -16,6 +16,7 @@ const defaultCommandRunner: CommandRunner = util.promisify(child_process.execFil
     under /mnt.
 */
 export type FileSystem = {
+    existsSync(path: string): boolean;
     mkdirSync(path: string, options: { recursive: true }): unknown;
     rmdirSync(path: string): void;
 };
@@ -149,6 +150,14 @@ export default class Rbd {
     }
 
     async mount(device: string, mountPoint: string): Promise<void> {
+        /*
+            Best-effort rollback: remember whether the mount directory was already there, so a
+            failing mount only removes the directory when this call created it. If the cleanup
+            itself fails the original mount error is still the one that is thrown - the leftover
+            directory (or a still-mapped device, which app.ts cleans up) is only logged.
+        */
+        const directoryExisted = this.fileSystem.existsSync(mountPoint);
+
         this.fileSystem.mkdirSync(mountPoint, { recursive: true });
 
         try {
@@ -158,6 +167,16 @@ export default class Rbd {
         }
         catch (error) {
             console.error(error);
+
+            if (!directoryExisted) {
+                try {
+                    this.fileSystem.rmdirSync(mountPoint);
+                }
+                catch (cleanupError) {
+                    console.error(`Failed to remove mount point ${mountPoint} after a failed mount`, cleanupError);
+                }
+            }
+
             throw new Error(`mount command failed with code ${(error as NodeJS.ErrnoException).code}: ${(error as Error).message}`);
         }
     }

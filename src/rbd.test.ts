@@ -51,12 +51,32 @@ class FakeRunner {
 class FakeFileSystem {
     readonly calls: string[][] = [];
 
+    /** Paths the fake filesystem reports as existing, like a mount point left over from before. */
+    readonly existing = new Set<string>();
+
+    /** Paths existsSync was asked about, kept apart from calls to keep assertions focused. */
+    readonly existsCalls: string[] = [];
+
+    /** Set to make every rmdirSync fail, like a directory that cannot be removed. */
+    failRmdirWith: string | undefined;
+
     readonly fs: FileSystem = {
+        existsSync: (path: string) => {
+            this.existsCalls.push(path);
+            return this.existing.has(path);
+        },
         mkdirSync: (path: string, options: { recursive: true }) => {
             this.calls.push(["mkdirSync", path, JSON.stringify(options)]);
+            this.existing.add(path);
         },
         rmdirSync: (path: string) => {
             this.calls.push(["rmdirSync", path]);
+
+            if (this.failRmdirWith !== undefined) {
+                throw new Error(this.failRmdirWith);
+            }
+
+            this.existing.delete(path);
         },
     };
 }
@@ -421,6 +441,56 @@ test("a failing unmount does not remove the mount point", async () => {
     await assert.rejects(() => rbd.unmount("/mnt/volumes/mypool/volume1"));
 
     assert.deepStrictEqual(fileSystem.calls, []);
+});
+
+test("a failing mount removes the mount point it created", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    const mountPoint = "/mnt/volumes/mypool/volume1";
+
+    runner.nextFailure(32, "wrong fs type");
+
+    await assert.rejects(() => rbd.mount("/dev/rbd0", mountPoint), {
+        message: "mount command failed with code 32: wrong fs type",
+    });
+
+    assert.deepStrictEqual(fileSystem.existsCalls, [mountPoint]);
+    assert.deepStrictEqual(fileSystem.calls, [
+        ["mkdirSync", mountPoint, '{"recursive":true}'],
+        ["rmdirSync", mountPoint],
+    ]);
+    assert.strictEqual(fileSystem.existing.has(mountPoint), false, "the created directory must be gone");
+});
+
+test("a failing mount keeps a mount point that already existed", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    const mountPoint = "/mnt/volumes/mypool/volume1";
+    fileSystem.existing.add(mountPoint);
+
+    runner.nextFailure(32, "wrong fs type");
+
+    await assert.rejects(() => rbd.mount("/dev/rbd0", mountPoint), {
+        message: "mount command failed with code 32: wrong fs type",
+    });
+
+    assert.deepStrictEqual(fileSystem.calls, [["mkdirSync", mountPoint, '{"recursive":true}']]);
+    assert.strictEqual(fileSystem.existing.has(mountPoint), true, "a pre-existing directory must be kept");
+});
+
+test("a cleanup failure after a failing mount does not hide the mount error", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    const mountPoint = "/mnt/volumes/mypool/volume1";
+    fileSystem.failRmdirWith = "directory not empty";
+
+    runner.nextFailure(32, "wrong fs type");
+
+    await assert.rejects(() => rbd.mount("/dev/rbd0", mountPoint), {
+        message: "mount command failed with code 32: wrong fs type",
+    });
+
+    assert.deepStrictEqual(fileSystem.calls, [
+        ["mkdirSync", mountPoint, '{"recursive":true}'],
+        ["rmdirSync", mountPoint],
+    ]);
 });
 
 test("invalid showmapped output turns into an error naming the command", async () => {
