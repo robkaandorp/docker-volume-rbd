@@ -6,8 +6,8 @@ import MountPointEntry from "./mountPointEntry";
 
 const socketAddress = "/run/docker/plugins/rbd.sock";
 const pool = process.env.RBD_CONF_POOL || "rbd";
-const cluster = process.env.RBD_CONF_CLUSTER || "ceph"; // ToDo: Not utilised currently
-const user = process.env.RBD_CONF_KEYRING_USER || "admin"; // ToDo: Not utilised currently
+const cluster = process.env.RBD_CONF_CLUSTER || undefined;
+const user = process.env.RBD_CONF_KEYRING_USER || undefined;
 const map_options = process.env.RBD_CONF_MAP_OPTIONS !== undefined
     ? process.env.RBD_CONF_MAP_OPTIONS.split(';').filter(option => option.length > 0) // explicitly set (possibly empty) overrides the default
     : ["--exclusive"]; // default to an exclusive lock when mapping to prevent multiple containers attempting to mount the block device
@@ -252,7 +252,7 @@ app.post("/VolumeDriver.List", async (request, response) => {
                     : null;
     
                 return {
-                    Name: name,
+                    Name: info.image,
                     Mountpoint: entry?.mountPoint || ""
                 };
             }),

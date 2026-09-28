@@ -14,11 +14,10 @@ All available options (as shown in [`config.json`](./config.json) and from line 
 - `RBD_CONF_POOL`
   - default: `rbd`
 - `RBD_CONF_CLUSTER`
-  - default: `ceph`
-  - _Note: not yet implemented; read from the environment but not passed to the rbd CLI._
+  - unset by default; when unset, the `rbd` CLI uses its own defaults (cluster `ceph`)
 - `RBD_CONF_KEYRING_USER`
-  - default: `admin`
-  - _Note: not yet implemented; read from the environment but not passed to the rbd CLI._
+  - unset by default; when unset, the `rbd` CLI uses its own defaults (user `admin`)
+  - Ceph user name without the `client.` prefix. For example, setting `customuser` makes Ceph look for `/etc/ceph/<cluster>.client.customuser.keyring`.
 - `RBD_CONF_MAP_OPTIONS`
   - default: `--exclusive`: ensures that only one instance can mount the rbd at a time to prevent corruption)
   - Provide a semicolon separated list to provide multiple options directly to the `rbd map` command. eg `RBD_CONF_MAP_OPTIONS="--exclusive;--read-only;--options noshare,lock_on_read"`

@@ -1,8 +1,8 @@
 FROM ubuntu:24.04 AS base
 ENV LANG=en_GB.UTF-8
-# Ubuntu 24.04 (noble) ships ceph-common 19.2 (Squid) natively and stays on the
-# 19.2.x line for the LTS lifetime. Squid clients do not emit the krbd 'ms_mode'
-# map option that breaks 'rbd map' on the swarm hosts (kernel 5.10, needs < 20.x).
+# ceph-common is installed from the official download.ceph.com 'debian-tentacle'
+# repository (Ceph Tentacle 20.2), matching the swarm hosts, which have been
+# upgraded to Tentacle 20.2.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends locales curl ca-certificates gpg && \
     echo "$LANG UTF-8" > /etc/locale.gen && \

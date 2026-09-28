@@ -4,14 +4,20 @@ const execFile = util.promisify(child_process.execFile);
 import fs from "fs";
 
 export default class Rbd {
-    // ToDo: Actually used the passed in options for cluster and user
-    constructor(readonly options: { pool: string, cluster: string, user: string, map_options: string[] }) { }
+    constructor(readonly options: { pool: string, cluster?: string, user?: string, map_options: string[] }) { }
+
+    private commonArgs(): string[] {
+        return [
+            ...(this.options.cluster ? ["--cluster", this.options.cluster] : []),
+            ...(this.options.user ? ["--id", this.options.user] : []),
+        ];
+    }
 
     async isMapped(name: string): Promise<string | null> {
-        let mapped: any[];
+        let mapped: { pool: string, name: string, device: string }[];
     
         try {
-            const { stdout, stderr } = await execFile("rbd", ["showmapped", "--format", "json"], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "showmapped", "--format", "json"], { timeout: 30000 });
             if (stderr) console.log(stderr);
     
             mapped = JSON.parse(stdout);
@@ -32,7 +38,7 @@ export default class Rbd {
     
     async map(name: string): Promise<string> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["map", ...this.options.map_options, "--pool", this.options.pool, name], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "map", ...this.options.map_options, "--pool", this.options.pool, name], { timeout: 30000 });
             if (stderr) console.log(stderr);
     
             return (stdout as string).trim();
@@ -48,7 +54,7 @@ export default class Rbd {
     
         if (mustUnmap) {
             try {
-                const { stdout, stderr } = await execFile("rbd", ["unmap", "--pool", this.options.pool, name], { timeout: 30000 });
+                const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "unmap", "--pool", this.options.pool, name], { timeout: 30000 });
                 if (stderr) console.log(stderr);
                 if (stdout) console.log(stdout);
             }
@@ -61,7 +67,7 @@ export default class Rbd {
 
     async list(): Promise<{ image: string, id: string, size: number, format: number }[]> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["list", "--pool", this.options.pool, "--long", "--format", "json"], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "list", "--pool", this.options.pool, "--long", "--format", "json"], { timeout: 30000 });
             if (stderr) console.log(stderr);
             
             return JSON.parse(stdout);
@@ -80,7 +86,7 @@ export default class Rbd {
 
     async create(name: string, size: string): Promise<void> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["create", "--pool", this.options.pool, name, "--size", size], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "create", "--pool", this.options.pool, name, "--size", size], { timeout: 30000 });
             if (stderr) console.log(stderr);
             if (stdout) console.log(stdout);
         }
@@ -104,7 +110,7 @@ export default class Rbd {
 
     async remove(name: string): Promise<void> {
         try {
-            const { stdout, stderr } = await execFile("rbd", ["trash", "move", "--pool", this.options.pool, name], { timeout: 30000 });
+            const { stdout, stderr } = await execFile("rbd", [...this.commonArgs(), "trash", "move", "--pool", this.options.pool, name], { timeout: 30000 });
             if (stderr) console.log(stderr);
             if (stdout) console.log(stdout);
         }

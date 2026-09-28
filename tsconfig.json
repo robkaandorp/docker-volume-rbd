@@ -3,6 +3,9 @@
         "module": "nodenext",
         "target": "esnext",
         "rootDir": "./src",
-        "outDir": "./dist"
+        "outDir": "./dist",
+        "strict": true,
+        "lib": ["es2023"],
+        "types": ["node"]
     }
 }
