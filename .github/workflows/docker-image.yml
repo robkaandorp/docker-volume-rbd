@@ -2,33 +2,119 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [master, develop]
   pull_request:
-    branches: [ "master" ]
+    branches: [master, develop]
+
+permissions:
+  contents: read
 
 jobs:
 
   build:
 
     runs-on: ubuntu-latest
-    env:
-      RELEASE_VERSION: "${{ vars.VERSION_TAG }}.${{ github.run_number }}"
+    outputs:
+      full_version: ${{ steps.version.outputs.full_version }}
+      base_version: ${{ steps.version.outputs.base_version }}
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Check out the repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Read and validate the version
+      id: version
+      run: |
+        set -euo pipefail
+        version=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' VERSION)
+        if ! [[ "${version}" =~ ^v[0-9]+\.[0-9]+-r[0-9]+$ ]]; then
+          echo "::error::VERSION does not match ^v[0-9]+\.[0-9]+-r[0-9]+$ (got '${version}')"
+          exit 1
+        fi
+        full_version="${version}"
+        base_version="${full_version%-r*}"
+        echo "FULL_VERSION=${full_version}" >> "$GITHUB_ENV"
+        echo "BASE_VERSION=${base_version}" >> "$GITHUB_ENV"
+        echo "full_version=${full_version}" >> "$GITHUB_OUTPUT"
+        echo "base_version=${base_version}" >> "$GITHUB_OUTPUT"
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag robkaandorp/rbd:${{ vars.VERSION_TAG }} --tag robkaandorp/rbd:${{ env.RELEASE_VERSION }}
+      run: docker build . --file Dockerfile --tag robkaandorp/rbd:${BASE_VERSION} --tag robkaandorp/rbd:${FULL_VERSION}
     - name: Export image
       run: |
-        id=$(docker create robkaandorp/rbd:${{ vars.VERSION_TAG }} true)
+        id=$(docker create robkaandorp/rbd:${FULL_VERSION} true)
         mkdir -p plugin/rootfs
         cp config.json plugin/
         docker export "$id" | sudo tar -x -C plugin/rootfs
         docker rm -vf "$id"
-        docker rmi robkaandorp/rbd:${{ vars.VERSION_TAG }}
+        docker rmi robkaandorp/rbd:${FULL_VERSION}
     - name: Create tar archive
-      run: sudo tar -czf docker-volume-rbd-${{ env.RELEASE_VERSION }}.tgz plugin/
-    - name: GitHub release
+      run: sudo tar -czf docker-volume-rbd-${FULL_VERSION}.tgz plugin/
+    - name: Upload plugin artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-volume-rbd-${{ steps.version.outputs.full_version }}
+        path: docker-volume-rbd-${{ steps.version.outputs.full_version }}.tgz
+        retention-days: 1
+
+  publish:
+
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: { group: publish-master, cancel-in-progress: false } # GitHub keeps at most one pending job per concurrency group, so an older waiting publish may be superseded by a newer master push (accepted limitation for this low-traffic repo; re-run the workflow to publish it).
+    env:
+      FULL_VERSION: ${{ needs.build.outputs.full_version }}
+      BASE_VERSION: ${{ needs.build.outputs.base_version }}
+
+    steps:
+    - name: Download the plugin artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-volume-rbd-${{ needs.build.outputs.full_version }}
+    - name: Extract the plugin rootfs
+      run: sudo tar -xzf docker-volume-rbd-${FULL_VERSION}.tgz
+    - name: Check that the version has not been released already
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-        echo ${{ github.token }} | gh auth login --with-token
-        gh release create ${{ env.RELEASE_VERSION }} *.tgz
+        set -euo pipefail
+
+        check_not_released() {
+          local kind="$1"
+          local endpoint="$2"
+          local output status
+          set +e
+          output=$(gh api "${endpoint}" 2>&1)
+          status=$?
+          set -e
+          if [ "${status}" -eq 0 ]; then
+            echo "::error::VERSION ${FULL_VERSION} was already released (or tag ${FULL_VERSION} already exists); bump the revision in VERSION"
+            exit 1
+          fi
+          if ! grep -q "HTTP 404" <<< "${output}"; then
+            echo "::error::Release check could not be completed for ${FULL_VERSION} (${kind}): ${output}"
+            exit 1
+          fi
+        }
+
+        check_not_released "release" "repos/${{ github.repository }}/releases/tags/${FULL_VERSION}"
+        check_not_released "tag" "repos/${{ github.repository }}/git/ref/tags/${FULL_VERSION}"
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Create and push the managed plugin
+      run: |
+        set -euo pipefail
+        sudo docker plugin create robkaandorp/rbd:${FULL_VERSION} plugin/
+        docker plugin push robkaandorp/rbd:${FULL_VERSION}
+        sudo docker plugin create robkaandorp/rbd:${BASE_VERSION} plugin/
+        docker plugin push robkaandorp/rbd:${BASE_VERSION}
+    - name: Create the GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release create "$FULL_VERSION" --target "${{ github.sha }}" docker-volume-rbd-${FULL_VERSION}.tgz

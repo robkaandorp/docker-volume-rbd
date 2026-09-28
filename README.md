@@ -3,6 +3,14 @@ Docker volume plugin for ceph rbd.
 
 This plugin uses the ubuntu lts image with a simple script as docker volume plugin api endpoint. The node script uses the standard ceph commandline tools to perform the rbd create, map, unmap, remove and mount operations. This release aligns with the Ceph Tentacle release (v20.2), but it may work with other versions as well.
 
+## Releases / CI
+
+Pushes to `develop` and all pull requests are built, tested and packaged by CI, but never published: they do not push to Docker Hub or create GitHub releases. The plugin version is read from the root `VERSION` file in the form `v<ceph major>.<ceph minor>-r<revision>` (initially `v20.2-r1`). Bump the revision on `develop` before each merge to `master`; for a new Ceph release, use its version, such as `v21.2-r1`.
+
+Merging to `master` publishes `robkaandorp/rbd:<base>` (the moving install tag, e.g. `v20.2`) and `robkaandorp/rbd:<full>` (the immutable revision tag, e.g. `v20.2-r1`) to Docker Hub using `docker plugin push`, since this is a Docker managed plugin. It also creates a GitHub release and git tag `<full>` on the exact `master` commit that was built. Publishing fails if that version's release or tag already exists; bump the revision in `VERSION` and merge again.
+
+Publishes run one at a time. If several `master` pushes arrive in quick succession, an intermediate publish may be superseded and skipped; re-run its workflow to publish it. Required repository secrets are `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with Read & Write permission). The `VERSION_TAG` repository variable is no longer needed.
+
 For normal use, setup the /etc/ceph folder on the host and install with:
 
 ```

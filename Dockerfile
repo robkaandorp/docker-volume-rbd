@@ -22,6 +22,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm ci
 COPY . .
 RUN pnpm run build
+RUN pnpm test
 RUN pnpm prune --prod
 
 FROM base

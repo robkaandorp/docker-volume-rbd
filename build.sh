@@ -1,6 +1,7 @@
 #!/bin/bash
 
-version=v20.2
+version=$(cat VERSION)
+version=${version%-r*}
 pluginname=robkaandorp/rbd
 pluginnametagged=$pluginname:$version
 echo $pluginnametagged
