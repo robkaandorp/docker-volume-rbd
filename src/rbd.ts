@@ -19,6 +19,7 @@ export type FileSystem = {
     existsSync(path: string): boolean;
     mkdirSync(path: string, options: { recursive: true }): unknown;
     rmdirSync(path: string): void;
+    readFileSync(path: string, encoding: "utf8"): string;
 };
 
 const defaultFileSystem: FileSystem = fs;
@@ -64,7 +65,30 @@ export default class Rbd {
 
         return entry.device;
     }
-    
+
+    /*
+        Which device the kernel has mounted at a mount point, read from /proc/mounts: null when
+        nothing is mounted there. Used to recognise a mount this process did not create, e.g. one
+        that survived a plugin restart, and to tell such a mount apart from an unrelated device.
+
+        The target is compared exactly, never as a prefix, so the volume "foo" is not confused with
+        "foobar". Parsing is deliberately minimal: one line per mount, whitespace-separated fields,
+        field 1 is the source device and field 2 the target.
+    */
+    async getMountedDevice(mountPoint: string): Promise<string | null> {
+        const mounts = this.fileSystem.readFileSync("/proc/mounts", "utf8");
+
+        for (const line of mounts.split("\n")) {
+            const fields = line.trim().split(/\s+/);
+
+            if (fields[1] === mountPoint) {
+                return fields[0];
+            }
+        }
+
+        return null;
+    }
+
     async map(name: string): Promise<string> {
         try {
             const { stdout, stderr } = await this.runner("rbd", [...this.commonArgs(), "map", ...this.options.map_options, "--pool", this.options.pool, name], { timeout: 30000 });

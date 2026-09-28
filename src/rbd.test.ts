@@ -57,6 +57,12 @@ class FakeFileSystem {
     /** Paths existsSync was asked about, kept apart from calls to keep assertions focused. */
     readonly existsCalls: string[] = [];
 
+    /** Content returned for any read, i.e. the fake /proc/mounts. */
+    fileContent = "";
+
+    /** Paths readFileSync was asked about, with the encoding that was requested. */
+    readonly readCalls: [string, string][] = [];
+
     /** Set to make every rmdirSync fail, like a directory that cannot be removed. */
     failRmdirWith: string | undefined;
 
@@ -77,6 +83,10 @@ class FakeFileSystem {
             }
 
             this.existing.delete(path);
+        },
+        readFileSync: (path: string, encoding: "utf8") => {
+            this.readCalls.push([path, encoding]);
+            return this.fileContent;
         },
     };
 }
@@ -194,6 +204,64 @@ test("unMap does not run rbd unmap when the pool differs", async () => {
     await rbd.unMap("volume1");
 
     assert.deepStrictEqual(runner.calls.map(call => call.args), [["showmapped", "--format", "json"]]);
+});
+
+test("getMountedDevice returns the device mounted at the given mount point", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = [
+        "sysfs /sys sysfs rw,nosuid 0 0",
+        "/dev/rbd0 /mnt/volumes/mypool/volume1 xfs rw,relatime 0 0",
+        "/dev/rbd1 /mnt/volumes/mypool/volume2 xfs rw,relatime 0 0",
+    ].join("\n");
+
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/volume2"), "/dev/rbd1");
+    assert.deepStrictEqual(fileSystem.readCalls, [["/proc/mounts", "utf8"]]);
+    assert.deepStrictEqual(runner.calls, [], "reading /proc/mounts must not run any command");
+});
+
+test("getMountedDevice returns null when nothing is mounted at the mount point", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = [
+        "sysfs /sys sysfs rw,nosuid 0 0",
+        "/dev/rbd0 /mnt/volumes/mypool/volume1 xfs rw,relatime 0 0",
+    ].join("\n");
+
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/othervolume"), null);
+});
+
+test("getMountedDevice returns null for an empty /proc/mounts", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = "";
+
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/volume1"), null);
+});
+
+test("getMountedDevice matches the mount point exactly, not as a prefix", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = [
+        "/dev/rbd1 /mnt/volumes/mypool/foobar xfs rw,relatime 0 0",
+        "/dev/rbd2 /mnt/volumes/mypool/foo/bar xfs rw,relatime 0 0",
+    ].join("\n");
+
+    // Neither the longer path nor the nested one is the volume "foo".
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/foo"), null);
+});
+
+test("getMountedDevice finds the entry whose target matches exactly among similar ones", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = [
+        "/dev/rbd1 /mnt/volumes/mypool/foobar xfs rw,relatime 0 0",
+        "/dev/rbd0 /mnt/volumes/mypool/foo xfs rw,relatime 0 0",
+    ].join("\n");
+
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/foo"), "/dev/rbd0");
+});
+
+test("getMountedDevice tolerates lines that are not mount entries", async () => {
+    const rbd = createRbd({ pool: "mypool", map_options: [] });
+    fileSystem.fileContent = "\n   \n/dev/rbd0 /mnt/volumes/mypool/volume1 xfs rw 0 0\n\n";
+
+    assert.strictEqual(await rbd.getMountedDevice("/mnt/volumes/mypool/volume1"), "/dev/rbd0");
 });
 
 test("list runs rbd list and returns the parsed output", async () => {

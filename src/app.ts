@@ -7,7 +7,7 @@ import MountPointEntry from "./mountPointEntry";
     The Rbd methods the app uses. Declaring it as a Pick keeps the app decoupled from
     the concrete implementation, so tests can pass a plain stub object.
 */
-export type RbdInterface = Pick<Rbd, "create" | "map" | "makeFilesystem" | "unMap" | "isMapped" | "mount" | "unmount" | "remove" | "getInfo" | "list">;
+export type RbdInterface = Pick<Rbd, "create" | "map" | "makeFilesystem" | "unMap" | "isMapped" | "getMountedDevice" | "mount" | "unmount" | "remove" | "getInfo" | "list">;
 
 /*
     Scope of the Mount/Create rollback:
@@ -38,6 +38,15 @@ async function cleanupBestEffort(action: () => Promise<void>, description: strin
     catch (cleanupError) {
         console.error(`Cleanup failed: could not ${description}`, cleanupError);
     }
+}
+
+/*
+    Message for the one situation both Mount and Unmount must refuse to act on: a device that is not
+    this volume's own mapped device is mounted at the volume's mount point, so unmounting or
+    unmapping anything for this volume could hit somebody else's mount.
+*/
+function describeMountedDeviceConflict(name: string, mountPoint: string, mountedDevice: string, mappedDevice: string | null): string {
+    return `Device ${mountedDevice} is mounted at ${mountPoint}, but volume ${name} is ${mappedDevice ? `mapped to ${mappedDevice}` : "not mapped"}`;
 }
 
 /*
@@ -218,21 +227,56 @@ export function createApp(rbd: RbdInterface, pool: string): express.Express {
             }
 
             /*
+                Nothing in the table for this volume, and yet it may already be mapped and mounted:
+                both live in the kernel and survive a plugin restart, while the table is in memory only.
+                So look at what is actually mounted at the mount point before mapping or mounting
+                anything.
+
                 Ownership is tracked from what this request actually did, not inferred from a later
                 isMapped call: a mapping that isMapped already reported is not ours to unmap, while a
                 mapping this request created (map resolved) is. map failing leaves us owning nothing.
+                An adopted mount was created by an earlier process, so it is never ours either.
             */
             let ownsMapping = false;
 
             try {
-                let device = await rbd.isMapped(req.Name);
+                const mappedDevice = await rbd.isMapped(req.Name);
+                const mountedDevice = await rbd.getMountedDevice(mountPoint);
 
-                if (!device) {
-                    device = await rbd.map(req.Name);
-                    ownsMapping = true;
+                if (mountedDevice) {
+                    /*
+                        Something is mounted at the mount point. Only this volume's own mapped device may
+                        be adopted: anything else means the mount point does not belong to this volume,
+                        and touching it (unmounting, or unmapping this volume's image) could hit another
+                        volume's data. So refuse and change nothing.
+                    */
+                    if (!mappedDevice || mountedDevice !== mappedDevice) {
+                        const error = describeMountedDeviceConflict(req.Name, mountPoint, mountedDevice, mappedDevice);
+                        console.error(error);
+                        response.json({ Err: error });
+                        return;
+                    }
+
+                    /*
+                        Otherwise adopt the mount that is already there: it is this volume's device at
+                        this volume's mount point, so a map/mount round trip would only fail (the device
+                        is already mounted) or mount the same thing twice. Nothing is mapped or mounted
+                        here, and ownsMapping stays false, so nothing this request does can ever unmap
+                        or unmount the adopted mount. The table entry below is a normal one, with this
+                        caller's ID, so reference counting for the volume starts from here.
+                    */
+                    console.log(`${mountPoint} is already mounted with ${mountedDevice}, not tracked (probably mounted before a plugin restart), adopting it`);
                 }
+                else {
+                    let device = mappedDevice;
 
-                await rbd.mount(device, mountPoint);
+                    if (!device) {
+                        device = await rbd.map(req.Name);
+                        ownsMapping = true;
+                    }
+
+                    await rbd.mount(device, mountPoint);
+                }
             }
             catch (error) {
                 if (ownsMapping) {
@@ -289,19 +333,53 @@ export function createApp(rbd: RbdInterface, pool: string): express.Express {
         console.log(`Unmounting rbd volume ${req.Name}`);
 
         await volumeLock.withVolumeLock(req.Name, async () => {
-            if (!mountPointTable.has(mountPoint)) {
-                const error = `Unknown volume ${req.Name}`;
-                console.error(error);
-                response.json({ Err: error });
-                return;
-            }
-
-            let mountPointEntry = mountPointTable.get(mountPoint);
+            const mountPointEntry = mountPointTable.get(mountPoint);
 
             if (!mountPointEntry) {
-                const error = `Unknown volume ${req.Name}`;
-                console.error(error);
-                response.json({ Err: error });
+                /*
+                    Not tracked, so this plugin process has no record of the volume - the usual
+                    situation right after a restart, when the table is empty again while the mapping
+                    and the mount live on in the kernel. Clean up what is actually there instead of
+                    refusing, but only when the mount at the mount point is this volume's own mapped
+                    device: anything else belongs to somebody else and is left completely alone.
+
+                    Accepted trade-off: because references are not tracked across a restart, this first
+                    Unmount for an untracked volume cleans it up (unmount + unmap) even if another
+                    container on the same node that started before the restart is still using it. Rbd
+                    volumes are used by one container at a time in practice, so the owner accepts that.
+                    Volumes mounted after the restart are tracked normally, with full reference counting.
+                */
+                try {
+                    const mappedDevice = await rbd.isMapped(req.Name);
+                    const mountedDevice = await rbd.getMountedDevice(mountPoint);
+
+                    // No mapped device at all counts as a conflict too: then the mounted device
+                    // cannot be this volume's own, whatever it is.
+                    if (mountedDevice && mountedDevice !== mappedDevice) {
+                        const error = describeMountedDeviceConflict(req.Name, mountPoint, mountedDevice, mappedDevice);
+                        console.error(error);
+                        response.json({ Err: error });
+                        return;
+                    }
+
+                    console.log(`Volume ${req.Name} is not tracked (probably mounted before a plugin restart), cleaning up what is left of it`);
+
+                    if (mountedDevice) {
+                        await rbd.unmount(mountPoint);
+                    }
+
+                    if (mappedDevice) {
+                        await rbd.unMap(req.Name);
+                    }
+                }
+                catch (error) {
+                    response.json({ Err: (error as Error).message });
+                    return;
+                }
+
+                response.json({
+                    Err: ""
+                });
                 return;
             }
 

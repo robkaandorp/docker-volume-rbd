@@ -41,6 +41,9 @@ class StubRbd implements RbdInterface {
     /** Result of isMapped(); null means "not mapped yet". */
     mapped: string | null = null;
 
+    /** Result of getMountedDevice(); null means "nothing mounted at the mount point". */
+    mounted: string | null = null;
+
     /** Result of getInfo(); undefined means "unknown volume". */
     info: { image: string, id: string, size: number, format: number } | undefined =
         { image: "volume1", id: "1", size: 1073741824, format: 2 };
@@ -100,6 +103,12 @@ class StubRbd implements RbdInterface {
         this.record("isMapped", [name], name);
         await this.waitAtGate("isMapped", name);
         return this.mapped;
+    }
+
+    async getMountedDevice(mountPoint: string): Promise<string | null> {
+        this.record("getMountedDevice", [mountPoint], mountPoint);
+        await this.waitAtGate("getMountedDevice", mountPoint);
+        return this.mounted;
     }
 
     async mount(device: string, mountPoint: string): Promise<void> {
@@ -418,6 +427,7 @@ test("Mount maps and mounts the volume", async () => {
 
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "map", args: ["volume1"] },
         { method: "mount", args: ["/dev/rbd0", "/mnt/volumes/rbd/volume1"] },
     ]);
@@ -467,6 +477,7 @@ test("a failed Mount unmaps the mapping it created and a retry starts from scrat
     // The mapping was created by this request, so it is rolled back.
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "map", args: ["volume1"] },
         { method: "mount", args: ["/dev/rbd0", "/mnt/volumes/rbd/volume1"] },
         { method: "unMap", args: ["volume1"] },
@@ -501,6 +512,7 @@ test("a failed Mount of an already mapped volume does not unmap it", async () =>
     // The mapping belongs to someone else: this request must not unmap it.
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "mount", args: ["/dev/rbd7", "/mnt/volumes/rbd/volume1"] },
     ]);
 });
@@ -516,6 +528,7 @@ test("a failed Mount does not unmap when map itself fails", async () => {
 
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "map", args: ["volume1"] },
     ]);
 });
@@ -545,6 +558,7 @@ test("two Mounts with different IDs only mount once", async () => {
     // The second Mount is served from the mount point table.
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "map", args: ["volume1"] },
         { method: "mount", args: ["/dev/rbd0", "/mnt/volumes/rbd/volume1"] },
     ]);
@@ -582,25 +596,273 @@ test("the first Unmount leaves the volume mounted and the second unmounts it", a
     });
 });
 
-test("Unmount can be called without a preceding Mount", async () => {
+test("Unmount without a preceding Mount does nothing when there is nothing left over", async () => {
     const port = await startApp();
+
+    // Not mapped and not mounted: there is nothing to clean up, but that is still a success.
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+
+    assert.deepStrictEqual(rbd.calls, [
+        { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
+    ]);
+});
+
+test("Unmount of an untracked volume unmounts and unmaps what a restart left behind", async () => {
+    const port = await startApp();
+
+    // The mapping and the mount survived the restart that emptied the mount point table.
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd0";
 
     assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
         status: 200,
-        body: { Err: "Unknown volume volume1" },
+        body: { Err: "" },
     });
 
-    assert.deepStrictEqual(rbd.calls, []);
+    assert.deepStrictEqual(rbd.calls, [
+        { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
+        { method: "unmount", args: ["/mnt/volumes/rbd/volume1"] },
+        { method: "unMap", args: ["volume1"] },
+    ]);
 });
 
-test("Unmount of an unknown volume returns an Err", async () => {
+test("Unmount of an untracked volume that is mapped but not mounted only unmaps it", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+
+    assert.deepStrictEqual(rbd.argsOf("unmount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), [["volume1"]]);
+});
+
+test("Unmount of an untracked volume refuses to touch another device's mount", async () => {
+    const port = await startApp();
+
+    // An untracked volume whose mount point has some other device mounted on it: leave it alone.
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd7";
+
+    const body = (await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" })).body as { Err: string };
+
+    assert.match(body.Err, /\/dev\/rbd7/);
+    assert.match(body.Err, /\/mnt\/volumes\/rbd\/volume1/);
+    assert.match(body.Err, /\/dev\/rbd0/);
+    assert.deepStrictEqual(rbd.argsOf("unmount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+});
+
+test("Unmount of an untracked volume refuses when something is mounted but the image is not mapped", async () => {
+    const port = await startApp();
+
+    // Mounted, but not by this volume's image: unmounting could remove somebody else's filesystem.
+    rbd.mounted = "/dev/rbd7";
+
+    const body = (await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" })).body as { Err: string };
+
+    assert.match(body.Err, /\/dev\/rbd7/);
+    assert.match(body.Err, /\/mnt\/volumes\/rbd\/volume1/);
+    assert.deepStrictEqual(rbd.argsOf("unmount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+});
+
+test("Unmount of an untracked volume maps a failing unmount to Err", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd0";
+    rbd.failWith.unmount = "device busy";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "device busy" },
+    });
+
+    // The unmap is not attempted after the failed unmount.
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+});
+
+test("Unmount of an untracked volume maps a failing isMapped to Err", async () => {
+    const port = await startApp();
+    rbd.failWith.isMapped = "cluster unreachable";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "cluster unreachable" },
+    });
+
+    assert.deepStrictEqual(rbd.argsOf("unmount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+});
+
+test("Unmount of an untracked volume maps a failing getMountedDevice to Err", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+    rbd.failWith.getMountedDevice = "cannot read /proc/mounts";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "cannot read /proc/mounts" },
+    });
+
+    assert.deepStrictEqual(rbd.argsOf("unmount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+});
+
+test("Unmount of an untracked volume maps a failing unMap to Err", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd0";
+    rbd.failWith.unMap = "device busy";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "device busy" },
+    });
+
+    // The unmount did happen before the failing unmap.
+    assert.deepStrictEqual(rbd.argsOf("unmount"), [["/mnt/volumes/rbd/volume1"]]);
+});
+
+test("Unmount of an untracked volume does not touch another volume's mount point", async () => {
     const port = await startApp();
     await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" });
 
+    // Another volume, never mounted by this plugin run: nothing of its own is left over.
     assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "othervolume", ID: "id1" }), {
         status: 200,
-        body: { Err: "Unknown volume othervolume" },
+        body: { Err: "" },
     });
+
+    assert.deepStrictEqual(rbd.argsOf("getMountedDevice"), [
+        ["/mnt/volumes/rbd/volume1"],
+        ["/mnt/volumes/rbd/othervolume"],
+    ]);
+
+    // volume1 is still mounted and tracked.
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Path", { Name: "volume1" }), {
+        status: 200,
+        body: { MountPoint: "/mnt/volumes/rbd/volume1", Err: "" },
+    });
+});
+
+test("Mount of an untracked volume adopts the mount that is already there", async () => {
+    const port = await startApp();
+
+    // Both survived the restart: this is exactly the state the plugin has no table entry for.
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd0";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { MountPoint: "/mnt/volumes/rbd/volume1", Err: "" },
+    });
+
+    // Adopting means neither mapping nor mounting again.
+    assert.deepStrictEqual(rbd.argsOf("map"), []);
+    assert.deepStrictEqual(rbd.argsOf("mount"), []);
+
+    // The adoption is a normal table entry, so the volume is now tracked and referenced by id1.
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Path", { Name: "volume1" }), {
+        status: 200,
+        body: { MountPoint: "/mnt/volumes/rbd/volume1", Err: "" },
+    });
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+    assert.deepStrictEqual(rbd.argsOf("unmount"), [["/mnt/volumes/rbd/volume1"]]);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), [["volume1"]]);
+});
+
+test("a second Mount of an adopted volume is reference counted like any other", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd0";
+
+    await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" });
+
+    // The adopted entry behaves like a normal one: a second Mount only adds a reference.
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id2" }), {
+        status: 200,
+        body: { MountPoint: "/mnt/volumes/rbd/volume1", Err: "" },
+    });
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+    assert.deepStrictEqual(rbd.argsOf("unmount"), [], "id2 still uses the volume");
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Unmount", { Name: "volume1", ID: "id2" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+    assert.deepStrictEqual(rbd.argsOf("unmount"), [["/mnt/volumes/rbd/volume1"]]);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), [["volume1"]]);
+});
+
+test("Mount refuses when another device is mounted at the volume's mount point", async () => {
+    const port = await startApp();
+    rbd.mapped = "/dev/rbd0";
+    rbd.mounted = "/dev/rbd7";
+
+    const body = (await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" })).body as { Err: string };
+
+    assert.match(body.Err, /\/dev\/rbd7/);
+    assert.match(body.Err, /\/mnt\/volumes\/rbd\/volume1/);
+    assert.match(body.Err, /\/dev\/rbd0/);
+
+    // Nothing was changed: no second mount, no unmap of this volume's mapping.
+    assert.deepStrictEqual(rbd.argsOf("map"), []);
+    assert.deepStrictEqual(rbd.argsOf("mount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+
+    // No table entry was created either.
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Path", { Name: "volume1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+});
+
+test("Mount refuses when something is mounted but the image is not mapped", async () => {
+    const port = await startApp();
+    rbd.mounted = "/dev/rbd7";
+
+    const body = (await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" })).body as { Err: string };
+
+    assert.match(body.Err, /\/dev\/rbd7/);
+    assert.match(body.Err, /\/mnt\/volumes\/rbd\/volume1/);
+
+    assert.deepStrictEqual(rbd.argsOf("map"), []);
+    assert.deepStrictEqual(rbd.argsOf("mount"), []);
+    assert.deepStrictEqual(rbd.argsOf("unMap"), []);
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Path", { Name: "volume1" }), {
+        status: 200,
+        body: { Err: "" },
+    });
+});
+
+test("Mount maps an error of getMountedDevice and does not map or mount", async () => {
+    const port = await startApp();
+    rbd.failWith.getMountedDevice = "cannot read /proc/mounts";
+
+    assert.deepStrictEqual(await post(port, "/VolumeDriver.Mount", { Name: "volume1", ID: "id1" }), {
+        status: 200,
+        body: { Err: "cannot read /proc/mounts" },
+    });
+
+    assert.deepStrictEqual(rbd.argsOf("map"), []);
+    assert.deepStrictEqual(rbd.argsOf("mount"), []);
 });
 
 test("Unmount with an unknown caller ID returns an Err and keeps the volume mounted", async () => {
@@ -803,9 +1065,10 @@ test("two concurrent Mounts of the same volume mount once and reference both IDs
         await drain(rbd.gates.values(), first, second);
     }
 
-    // Exactly one isMapped/map/mount sequence, and both IDs are referenced.
+    // Exactly one isMapped/getMountedDevice/map/mount sequence, and both IDs are referenced.
     assert.deepStrictEqual(rbd.calls, [
         { method: "isMapped", args: ["volume1"] },
+        { method: "getMountedDevice", args: ["/mnt/volumes/rbd/volume1"] },
         { method: "map", args: ["volume1"] },
         { method: "mount", args: ["/dev/rbd0", "/mnt/volumes/rbd/volume1"] },
     ]);
