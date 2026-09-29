@@ -110,10 +110,28 @@ jobs:
     - name: Create and push the managed plugin
       run: |
         set -euo pipefail
+        # The plugin is built and pushed exactly once (the immutable full version tag).
+        # A second `plugin create` from the same plugin/ directory always fails: it
+        # commits the same rootfs layer blob into the daemon's content store
+        # ("content sha256:...: already exists"), and Docker has no `plugin tag`.
         sudo docker plugin create robkaandorp/rbd:${FULL_VERSION} plugin/
         docker plugin push robkaandorp/rbd:${FULL_VERSION}
-        sudo docker plugin create robkaandorp/rbd:${BASE_VERSION} plugin/
-        docker plugin push robkaandorp/rbd:${BASE_VERSION}
+    - name: Tag the base version (and verify it is an exact copy)
+      run: |
+        set -euo pipefail
+        # Add the moving base tag on the registry side by copying the pushed manifest.
+        # The flag below is required: without it buildx would wrap this single non-index
+        # source in a new manifest list, changing the digest and dropping the plugin
+        # media type. With it, buildx makes a carbon copy of the source manifest, so the
+        # base tag resolves to exactly the same bytes as the full tag.
+        docker buildx imagetools create --prefer-index=false --tag robkaandorp/rbd:${BASE_VERSION} robkaandorp/rbd:${FULL_VERSION}
+        full_digest=$(docker buildx imagetools inspect --raw robkaandorp/rbd:${FULL_VERSION} | sha256sum | awk '{ print $1 }')
+        base_digest=$(docker buildx imagetools inspect --raw robkaandorp/rbd:${BASE_VERSION} | sha256sum | awk '{ print $1 }')
+        if [ "${base_digest}" != "${full_digest}" ]; then
+          echo "::error::base tag robkaandorp/rbd:${BASE_VERSION} is not an exact copy of ${FULL_VERSION}"
+          exit 1
+        fi
+        echo "robkaandorp/rbd:${BASE_VERSION} is an exact copy of robkaandorp/rbd:${FULL_VERSION} (manifest digest ${full_digest})"
     - name: Create the GitHub release
       env:
         GH_TOKEN: ${{ github.token }}
