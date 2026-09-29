@@ -135,4 +135,5 @@ jobs:
     - name: Create the GitHub release
       env:
         GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
       run: gh release create "$FULL_VERSION" --target "${{ github.sha }}" docker-volume-rbd-${FULL_VERSION}.tgz
